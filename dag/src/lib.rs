@@ -4,19 +4,360 @@ mod map_to_constraint_list;
 mod r1cs_porting;
 mod sym_porting;
 mod witness_producer;
+mod tags_checking;
+
+use tags_checking::TemplateVerification;
 use circom_algebra::num_bigint::BigInt;
 use constraint_list::ConstraintList;
 use constraint_writers::debug_writer::DebugWriter;
 use constraint_writers::ConstraintExporter;
 use program_structure::constants::UsefulConstants;
 use program_structure::error_definition::ReportCollection;
-use std::collections::{HashMap, HashSet};
+use std::collections::{HashMap, HashSet, LinkedList};
+use std::time::Instant;
 type Signal = usize;
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 type Substitution = circom_algebra::algebra::Substitution<usize>;
 type Range = std::ops::Range<usize>;
+use program_structure::ast::Expression;
 
 pub type FastSubAccess = HashMap<usize, Substitution>;
+pub type SafetyImplication = (Vec<usize>, Vec<usize>);
+
+#[derive(Clone)]
+pub struct ExecutedImplication{
+    pub left: Vec<Expression>,
+    pub right: Vec<Expression>,
+}
+
+
+#[derive(PartialEq, Eq)] 
+pub enum PossibleResult{
+    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
+} impl PossibleResult {
+    fn finished_verification(&self) -> bool{
+        self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
+    }
+    fn print_result(&self){
+        match self{
+            &PossibleResult::FAILED => {print!("FAILED -> FOUND COUNTEREXAMPLE\n");}
+            &PossibleResult::UNKNOWN => {print!("UNKNOWN -> VERIFICATION TIMEOUT\n");}
+            &PossibleResult::NOTHING => {print!("NOTHING TO VERIFY\n");}
+            _ => {print!("VERIFIED\n");}
+        }
+    }
+}
+
+
+#[derive(Default)]
+pub struct TreeConstraints {
+    constraints: Vec<Constraint>,
+    node_id: usize,
+    template_name: String,
+    pretty_template_name: String,
+    preconditions: Vec<Expression>,
+    preconditions_intermediates: Vec<Expression>,
+    postconditions_intermediates: Vec<Expression>,
+    postconditions_outputs: Vec<Expression>,
+    facts: Vec<Expression>,
+    tags_preconditions: Vec<Expression>,
+    tags_postconditions_intermediates: Vec<Expression>,
+    tags_postconditions_outputs: Vec<Expression>,
+    number_signals: usize,
+    number_inputs: usize, 
+    number_outputs: usize,
+    initial_signal: usize,
+    subcomponents: LinkedList<TreeConstraints>,
+}
+
+impl TreeConstraints {
+    pub fn template_name(&self)-> &String{
+        &self.template_name
+    }
+
+    pub fn pretty_template_name(&self)-> &String{
+        &self.pretty_template_name
+    }
+
+    pub fn subcomponents(&self)-> &LinkedList<TreeConstraints>{
+        &self.subcomponents
+    }
+
+    pub fn constraints(&self)-> &Vec<Constraint>{
+        &self.constraints
+    }
+
+    pub fn get_no_postconditions(&self) -> usize{
+        self.postconditions_intermediates.len() + self.postconditions_outputs.len() 
+    }
+
+    pub fn get_no_tags_postconditions(&self) -> usize{
+        self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len() 
+    }
+
+    fn add_info_component(&self, verification: &mut TemplateVerification)-> Option<&LinkedList<TreeConstraints>>{
+        //if self.constraints.len() <= 150{
+            for c in &self.constraints{
+                verification.constraints.push(c.clone());
+            }
+            for s in (self.number_inputs + self.number_outputs)..self.number_signals{
+                verification.signals.push_back(s+self.initial_signal);
+            }
+            for subtree_child in &self.subcomponents{
+                let (new_signals, new_implication, new_tag_implication, new_safety_implication) = subtree_child.generate_info_subtree();
+                for s in new_signals{
+                    verification.signals.push_back(s);
+                }
+                verification.implications.push(new_implication);
+                verification.tags_implications.push(new_tag_implication);
+                verification.implications_safety.push(new_safety_implication);
+            }
+            Some(&self.subcomponents)
+        /* } else{
+            println!("Subcomponent has not been considered since it has {} constraints", self.constraints.len());
+            None
+        }*/
+    }
+
+    pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
+        add_tags_info: bool, add_postconditions_info: bool
+    ) -> (PossibleResult, PossibleResult, PossibleResult){
+        let mut implications: Vec<ExecutedImplication> = Vec::new();
+        let mut tags_implications: Vec<ExecutedImplication> = Vec::new();
+
+        let mut implications_safety: Vec<SafetyImplication> = Vec::new();
+
+        let mut signals: LinkedList<usize> = LinkedList::new(); 
+        
+        for s in 0..self.number_signals{
+            signals.push_back(s+self.initial_signal);
+        }
+        
+        for subtree in &self.subcomponents{
+            let (mut new_signals, new_implication, new_tag_implication, new_implications_safety) = subtree.generate_info_subtree();
+            signals.append(&mut new_signals);
+            implications.push(new_implication);
+            tags_implications.push(new_tag_implication);
+            implications_safety.push(new_implications_safety)
+        }
+
+        let mut postconditions = self.postconditions_outputs.clone();
+        for post in self.postconditions_intermediates.clone(){
+            postconditions.push(post);
+        }
+
+        let mut verification = TemplateVerification::new(
+            &self.template_name, 
+            signals, 
+            self.initial_signal,
+            self.number_outputs,
+            self.number_inputs,
+            self.constraints.clone(), 
+            self.preconditions.clone(), 
+            self.preconditions_intermediates.clone(),
+            self.postconditions_outputs.clone(),
+            self.postconditions_intermediates.clone(),
+            self.facts.clone(),
+            self.tags_preconditions.clone(), 
+            self.tags_postconditions_outputs.clone(),
+            self.tags_postconditions_intermediates.clone(),
+            implications,
+            tags_implications,
+            implications_safety,
+            field,
+            verification_timeout,
+            check_tags,
+            check_postconditions,
+            check_safety,
+            add_tags_info,
+            add_postconditions_info,
+        );
+        println!("Checking template {}", self.pretty_template_name);
+        println!("Number of signals (i,int,o): {}", self.number_signals);
+        if check_tags{
+            println!("Number of tagged signals to check: {}", self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len());
+        }
+        if check_postconditions{
+            println!("Number of postconditions to check: {}", self.postconditions_intermediates.len() + self.postconditions_outputs.len());
+        }        
+        println!("Number of constraints in template: {}", self.constraints().len());
+        let inicio = Instant::now();
+
+        let (mut result_tags, mut result_postconditions, mut result_safety) = verification.deduce();
+        let mut finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+
+        if finished_verification{
+            let duration = inicio.elapsed();    
+            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
+            println!("     NUMBER OF ROUNDS: 0\n ");
+            println!("---> VERIFICATION_RESULTS:");
+            if check_tags{
+                print!("-----> TAGS CHECKING: ");
+                result_tags.print_result();
+            }
+            if check_postconditions{
+                print!("-----> POSTCONDITIONS CHECKING: ");
+                result_postconditions.print_result();
+            }
+            if check_safety{
+                print!("-----> WEAK SAFETY: ");
+                result_safety.print_result();
+            }
+            println!("\n\n");
+            (result_tags, result_postconditions, result_safety)
+        } else if !self.subcomponents.is_empty(){
+            let mut to_check_next = Vec::new();
+            let mut n_rounds = 1;
+            for subtree in &self.subcomponents{
+                let result_add_components = subtree.add_info_component(&mut verification);
+                if result_add_components.is_some(){
+                    for aux in result_add_components.unwrap(){
+                        to_check_next.push(aux);
+                    }
+                }
+            }
+
+            if result_tags == PossibleResult::VERIFIED{
+                verification.check_tags = false;
+            }
+            if result_postconditions == PossibleResult::VERIFIED{
+                verification.check_postconditions = false;
+            }
+            if result_safety == PossibleResult::VERIFIED{
+                verification.check_safety = false;
+            }
+
+            println!("### Trying to verify adding constraints of the children");
+            (result_tags, result_postconditions, result_safety) = verification.deduce();
+            finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+            while !finished_verification && !to_check_next.is_empty(){
+                let new_components = std::mem::take(&mut to_check_next);
+                n_rounds = n_rounds + 1;
+                
+                for subtree in &new_components{
+                    let result_add_components = subtree.add_info_component(&mut verification);
+                    if result_add_components.is_some(){
+                        for aux in result_add_components.unwrap(){
+                            to_check_next.push(aux);
+                        }
+                    }
+                }
+
+                if result_tags == PossibleResult::VERIFIED{
+                    verification.check_tags = false;
+                }
+                if result_postconditions == PossibleResult::VERIFIED{
+                    verification.check_postconditions = false;
+                }
+                if result_safety == PossibleResult::VERIFIED{
+                    verification.check_safety = false;
+                }
+
+                println!("### Trying to verify adding constraints of the children");
+                (result_tags, result_postconditions, result_safety) = verification.deduce();
+                finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+            }
+            let duration = inicio.elapsed();    
+            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
+            println!("     NUMBER OF ROUNDS: {}\n ", n_rounds);
+            println!("---> VERIFICATION_RESULTS:");
+            if check_tags{
+                print!("-----> TAGS CHECKING: ");
+               result_tags.print_result();
+            }
+            if check_postconditions{
+                print!("-----> POSTCONDITIONS CHECKING: ");
+                result_postconditions.print_result();
+            }
+            if check_safety{
+                print!("-----> WEAK SAFETY: ");
+                result_safety.print_result();
+            }
+            println!("\n\n");
+            (result_tags, result_postconditions, result_safety)
+        } else{
+            let duration = inicio.elapsed();  
+            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
+            println!("     NUMBER OF ROUNDS: 0\n ");
+            println!("---> VERIFICATION_RESULTS:");
+            if check_tags{
+                print!("-----> TAGS CHECKING: ");
+                result_tags.print_result();
+            }
+            if check_postconditions{
+                print!("-----> POSTCONDITIONS CHECKING: ");
+                result_postconditions.print_result();
+            }
+            if check_safety{
+                print!("-----> WEAK SAFETY: ");
+                result_safety.print_result();
+            }
+            println!("\n\n");
+            (result_tags, result_postconditions, result_safety)
+        }
+    }
+
+    fn generate_info_subtree(&self)-> (LinkedList<usize>, ExecutedImplication, ExecutedImplication, SafetyImplication){
+        (   self.generate_io_signals(),
+            self.generate_implications(), 
+            self.generate_tags_implications(), 
+            self.generate_implications_safety()
+        )
+    }
+
+    fn generate_io_signals(&self)-> LinkedList<usize>{
+        let mut signals = LinkedList::new();
+        for s in 0..(self.number_inputs+ self.number_outputs){
+            signals.push_back(s+self.initial_signal);
+        } 
+        signals
+    }
+    fn generate_tags_implications(&self)-> ExecutedImplication{
+        let mut left_conditions = Vec::new();
+        let mut right_conditions = Vec::new();
+        if self.preconditions_intermediates.is_empty() {
+            for prec in &self.preconditions{
+                left_conditions.push(prec.clone());
+            }
+            for prec in &self.tags_preconditions{
+                left_conditions.push(prec.clone());
+            }
+            for post in &self.tags_postconditions_outputs{
+                right_conditions.push(post.clone());
+            }
+        }
+        ExecutedImplication{left: left_conditions, right: right_conditions}
+    }
+    fn generate_implications(&self)-> ExecutedImplication{
+        let mut left_conditions = Vec::new();
+        let mut right_conditions = Vec::new();
+        if self.preconditions_intermediates.is_empty() {
+            for prec in &self.preconditions{
+                left_conditions.push(prec.clone());
+            }
+            for prec in &self.tags_preconditions{
+                left_conditions.push(prec.clone());
+            }
+            for post in &self.postconditions_outputs{
+                right_conditions.push(post.clone());
+            }
+        }
+        ExecutedImplication{left: left_conditions, right: right_conditions}
+    }
+    fn generate_implications_safety(&self)-> SafetyImplication{
+        let mut list_inputs = Vec::new();
+        let mut list_outputs = Vec::new();
+        for s in 0..self.number_outputs{
+            list_outputs.push(self.initial_signal + s);
+        }
+        for s in 0..self.number_inputs{
+            list_inputs.push(self.initial_signal + self.number_outputs + s);
+        }
+        (list_inputs, list_outputs)
+    }
+
+
+}
 
 pub struct Tree<'a> {
     dag: &'a DAG,
@@ -28,6 +369,14 @@ pub struct Tree<'a> {
     pub forbidden: HashSet<usize>,
     pub id_to_name: HashMap<usize, String>,
     pub constraints: Vec<Constraint>,
+    pub preconditions: Vec<Expression>,
+    pub preconditions_intermediates: Vec<Expression>,
+    pub postconditions_outputs: Vec<Expression>,
+    pub postconditions_intermediates: Vec<Expression>,
+    pub facts: Vec<Expression>,
+    pub tags_preconditions: Vec<Expression>,
+    pub tags_postconditions_outputs: Vec<Expression>,
+    pub tags_postconditions_intermediates: Vec<Expression>,
 }
 
 impl<'a> Tree<'a> {
@@ -39,6 +388,14 @@ impl<'a> Tree<'a> {
         let offset = dag.get_entry().unwrap().in_number;
         let path = dag.get_entry().unwrap().label.clone();
         let constraints = root.constraints.clone();
+        let preconditions = root.preconditions.clone();
+        let preconditions_intermediates = root.preconditions_intermediates.clone();
+        let postconditions_intermediates = root.postconditions_intermediates.clone();
+        let postconditions_outputs = root.postconditions_outputs.clone();
+        let facts = root.facts.clone();
+        let tags_preconditions = root.tags_preconditions.clone();
+        let tags_postconditions_intermediates = root.tags_postconditions_intermediates.clone();
+        let tags_postconditions_outputs = root.tags_postconditions_outputs.clone();
         let mut id_to_name = HashMap::new();
         let mut signals: Vec<_> = Vec::new();
         let forbidden: HashSet<_> =
@@ -50,8 +407,12 @@ impl<'a> Tree<'a> {
             }
         }
         signals.sort();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
-    }
+        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints,
+            preconditions, preconditions_intermediates, postconditions_intermediates, postconditions_outputs,
+            facts,
+            tags_preconditions, tags_postconditions_intermediates, tags_postconditions_outputs,
+         }   
+        }
 
     pub fn go_to_subtree(current: &'a Tree, edge: &Edge) -> Tree<'a> {
         let field = current.field.clone();
@@ -76,7 +437,54 @@ impl<'a> Tree<'a> {
             .filter(|c| !c.is_empty())
             .map(|c| Constraint::apply_offset(c, offset))
             .collect();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
+        let preconditions: Vec<_> = node
+            .preconditions
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let preconditions_intermediates: Vec<_> = node
+            .preconditions_intermediates
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let postconditions_intermediates: Vec<_> = node
+            .postconditions_intermediates
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let postconditions_outputs: Vec<_> = node
+            .postconditions_outputs
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let facts: Vec<_> = node
+            .facts
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let tags_preconditions: Vec<_> = node
+            .tags_preconditions
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let tags_postconditions_intermediates: Vec<_> = node
+            .tags_postconditions_intermediates
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+        let tags_postconditions_outputs: Vec<_> = node
+            .tags_postconditions_outputs
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect();
+
+        
+            
+        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints,
+            preconditions, preconditions_intermediates, postconditions_intermediates, postconditions_outputs,
+            facts, 
+            tags_preconditions, tags_postconditions_intermediates, tags_postconditions_outputs,
+         }
     }
 
     pub fn get_edges(tree: &'a Tree) -> &'a Vec<Edge> {
@@ -135,6 +543,7 @@ impl Edge {
 pub struct Node {
     entry: Edge,
     template_name: String,
+    pretty_template_name: String,
     parameters: Vec<BigInt>,
     number_of_signals: usize,
     number_of_components: usize,
@@ -154,19 +563,30 @@ pub struct Node {
     has_parallel_sub_cmp: bool,
     is_custom_gate: bool,
     number_of_subcomponents_indexes: usize,
+    preconditions: Vec<Expression>,
+    preconditions_intermediates: Vec<Expression>,
+    postconditions_intermediates: Vec<Expression>,
+    postconditions_outputs: Vec<Expression>,
+    facts: Vec<Expression>,
+    tags_preconditions: Vec<Expression>,
+    tags_postconditions_intermediates: Vec<Expression>,
+    tags_postconditions_outputs: Vec<Expression>,
 }
 
 impl Node {
     fn new(
         id: usize,
         template_name: String,
+        pretty_template_name: String,
         parameters: Vec<BigInt>,
         ordered_signals: Vec<String>,
         is_parallel: bool,
         is_custom_gate: bool
     ) -> Node {
         Node {
-            template_name, entry: Edge::new_entry(id),
+            template_name, 
+            pretty_template_name,
+            entry: Edge::new_entry(id),
             parameters,
             number_of_components: 1,
             ordered_signals,
@@ -221,6 +641,39 @@ impl Node {
 
     fn add_underscored_signal(&mut self, signal: usize) {
         self.underscored_signals.push(signal)
+    }
+    
+    fn add_precondition(&mut self, prec: Expression) {
+        self.preconditions.push(prec)
+    }
+
+    fn add_precondition_intermediate(&mut self, prec: Expression) {
+        self.preconditions_intermediates.push(prec)
+    }
+
+
+    fn add_postcondition_intermediate(&mut self, post: Expression) {
+        self.postconditions_intermediates.push(post)
+    }
+
+    fn add_postcondition_output(&mut self, post: Expression) {
+        self.postconditions_outputs.push(post)
+    }
+
+    fn add_fact(&mut self, fact: Expression) {
+        self.facts.push(fact)
+    }
+
+    fn add_tag_precondition(&mut self, prec: Expression) {
+        self.tags_preconditions.push(prec)
+    }
+
+    fn add_tag_postcondition_intermediate(&mut self, post: Expression) {
+        self.tags_postconditions_intermediates.push(post)
+    }
+
+    fn add_tag_postcondition_output(&mut self, post: Expression) {
+        self.tags_postconditions_outputs.push(post)
     }
 
     fn set_number_of_subcomponents_indexes(&mut self, number_scmp: usize) {
@@ -371,6 +824,7 @@ impl DAG {
     pub fn add_node(
         &mut self,
         template_name: String,
+        pretty_template_name: String,
         parameters: Vec<BigInt>,
         ordered_signals: Vec<String>,
         is_parallel: bool,
@@ -378,7 +832,7 @@ impl DAG {
     ) -> usize {
         let id = self.nodes.len();
         self.nodes.push(
-            Node::new(id, template_name, parameters, ordered_signals, is_parallel, is_custom_gate)
+            Node::new(id, template_name, pretty_template_name, parameters, ordered_signals, is_parallel, is_custom_gate)
         );
         self.adjacency.push(vec![]);
         id
@@ -411,6 +865,53 @@ impl DAG {
     pub fn add_underscored_signal(&mut self, signal: usize) {
         if let Option::Some(node) = self.get_mut_main() {
             node.add_underscored_signal(signal);
+         }
+    }
+    pub fn add_precondition(&mut self, prec: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_precondition(prec);
+        }
+    }
+
+    pub fn add_precondition_intermediate(&mut self, prec: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_precondition_intermediate(prec);
+        }
+    }
+
+    pub fn add_postcondition_intermediate(&mut self, post: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_postcondition_intermediate(post);
+        }
+    }
+
+    pub fn add_postcondition_output(&mut self, post: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_postcondition_output(post);
+        }
+    }
+
+    pub fn add_fact(&mut self, fact: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_fact(fact);
+        }
+    }
+
+    pub fn add_tag_precondition(&mut self, prec: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_tag_precondition(prec);
+        }
+    }
+
+    pub fn add_tag_postcondition_intermediate(&mut self, post: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_tag_postcondition_intermediate(post);
+        }
+    }
+
+    pub fn add_tag_postcondition_output(&mut self, post: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_tag_postcondition_output(post);
         }
     }
 
@@ -533,6 +1034,10 @@ impl DAG {
 
     pub fn map_to_list(self, flags: SimplificationFlags) -> ConstraintList {
         map_to_constraint_list::map(self, flags)
+    }
+
+    pub fn map_to_constraint_tree(&self) -> TreeConstraints {
+        map_to_constraint_list::map_to_constraint_tree(&self)
     }
 }
 

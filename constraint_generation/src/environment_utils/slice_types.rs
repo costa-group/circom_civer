@@ -4,6 +4,7 @@ pub use super::memory_slice::{MemoryError, TypeInvalidAccess, TypeAssignmentErro
 pub use circom_algebra::algebra::ArithmeticExpression;
 pub use num_bigint::BigInt;
 use std::collections::BTreeMap;
+use program_structure::ast::Expression;
 
 #[derive(Debug, Copy, Clone)]
 pub struct TagState{
@@ -17,3 +18,4 @@ pub type AExpressionSlice = MemorySlice<ArithmeticExpression<String>>;
 // The boolean is true if the signal contains a value
 pub type SignalSlice = MemorySlice<bool>;
 pub type ComponentSlice = MemorySlice<ComponentRepresentation>;
+pub type ExpressionSlice = MemorySlice<Option<Expression>>;

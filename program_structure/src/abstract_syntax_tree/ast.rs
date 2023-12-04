@@ -148,6 +148,12 @@ pub enum Definition {
         parallel: bool,
         is_custom_gate: bool,
     },
+    Specification {
+        meta: Meta,
+        tag: String,
+        signal: String,
+        condition: Expression,
+    },
     Function {
         meta: Meta,
         name: String,
@@ -168,6 +174,16 @@ pub fn build_template(
     Definition::Template { meta, name, args, arg_location, body, parallel, is_custom_gate }
 }
 
+pub fn build_specification(
+        meta: Meta,
+        tag: String,
+        signal: String,
+        condition: Expression, 
+    ) -> Definition {
+        Definition::Specification {meta, tag, signal, condition}
+}
+
+
 pub fn build_function(
     meta: Meta,
     name: String,
@@ -180,6 +196,11 @@ pub fn build_function(
 
 #[derive(Clone)]
 pub enum Statement {
+    SpecificationCondition{
+        meta : Meta,
+        is_precondition: TypeSpecification, // prec, post, fact
+        cond: Expression,
+    },
     IfThenElse {
         meta: Meta,
         cond: Expression,
@@ -356,6 +377,7 @@ pub enum ExpressionInfixOpcode {
     NotEq,
     BoolOr,
     BoolAnd,
+    BoolImplication,
     BitOr,
     BitAnd,
     BitXor,
@@ -388,6 +410,13 @@ pub fn build_log_string(acc: String) -> LogArgument {
 }
 pub fn build_log_expression(expr: Expression) -> LogArgument {
     LogArgument::LogExp(expr)
+}
+
+#[derive(Clone)]
+pub enum TypeSpecification {
+    Precondition,
+    Postcondition,
+    Fact,
 }
 
 
@@ -570,6 +599,35 @@ pub fn produce_compiler_version_report(path : String, required_version : Version
         ReportCode::CompilerVersionError,
     );
     report
+}
+
+pub fn implication_inside_condition_error(meta : Meta) -> Report {
+    let msg = "An implication boolean operator cannot be used inside a condition ".to_string();
+    let mut report = Report::error(
+        format!("{}", msg),
+        ReportCode::ImplicationError,
+    );
+    let file_id = meta.get_file_id().clone();
+    report.add_primary(
+        meta.location,
+        file_id,
+        "This is the implication boolean operator used inside a condition".to_string(),
+    );
+    report
+}
+
+pub fn implication_general_error(meta : Meta, msg : String) -> Report {
+    let mut report = Report::error(
+                    format!("{}", msg),
+                    ReportCode::ImplicationError,
+                );
+                let file_id = meta.get_file_id().clone();
+                report.add_primary(
+                    meta.location,
+                    file_id,
+                    "This is the implication boolean operator whose use is not allowed".to_string(),
+                );
+                report
 }
 
 pub fn anonymous_inside_condition_error(meta : Meta) -> Report {

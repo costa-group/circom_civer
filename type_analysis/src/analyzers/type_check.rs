@@ -475,6 +475,28 @@ fn type_statement(
                 );
             }
         },
+        SpecificationCondition {cond, ..} => {
+            let rhe_response = type_expression(cond, program_archive, analysis_information);
+            let cond_type = if let Result::Ok(r_type) = rhe_response {
+                r_type
+            } else {
+                return;
+            };
+            if cond_type.is_template(){
+                add_report(
+                    ReportCode::MustBeSingleArithmeticT,
+                    cond.get_meta(),
+                    &mut analysis_information.reports,
+                )
+            }else if cond_type.dim() > 0 {
+                add_report(
+                    ReportCode::MustBeSingleArithmetic(cond_type.dim()),
+                    cond.get_meta(),
+                    &mut analysis_information.reports,
+                )
+            }
+        }
+
     }
 }
 fn type_expression(
@@ -1074,3 +1096,43 @@ fn add_report(error_code: ReportCode, meta: &Meta, reports: &mut ReportCollectio
     report.add_primary(location, file_id, message);
     reports.push(report);
 }
+
+pub fn specification_type_check(specification_name : &str, program_archive: &ProgramArchive) -> Result<OutInfo, ReportCollection> {
+    let mut analysis_information = AnalysisInformation {
+        reached: HashSet::new(),
+        file_id: *program_archive.get_file_id_main(),
+        reports: ReportCollection::new(),
+        registered_calls: CallRegister::new(),
+        environment: TypingEnvironment::new(),
+        return_type: Option::None,
+    };
+    let specification_data = program_archive.get_specification_data(specification_name);
+    analysis_information.environment.add_input(specification_data.get_signal(),
+                                         (0,vec![specification_data.get_tag().to_string()]));
+    let exp =  specification_data.get_condition();
+    let type_analysis_response = type_expression(&exp, program_archive, &mut analysis_information);
+    let cond_type = if let Result::Ok(t) = type_analysis_response {
+        t
+    } else {
+        FoldedType::template("should not enter here")
+    };
+    if cond_type.is_template(){
+        add_report(
+            ReportCode::MustBeSingleArithmeticT,
+            exp.get_meta(),
+            &mut analysis_information.reports,
+        )
+    }else if cond_type.dim() > 0 {
+        add_report(
+            ReportCode::MustBeSingleArithmetic(cond_type.dim()),
+            exp.get_meta(),
+            &mut analysis_information.reports,
+        )
+    }
+    if analysis_information.reports.is_empty() {
+        Result::Ok(OutInfo { reached: analysis_information.reached })
+    } else {
+        Result::Err(analysis_information.reports)
+    }
+}
+

@@ -52,6 +52,8 @@ fn reduce_types_in_statement(stmt: &mut Statement, environment: &mut Environment
         UnderscoreSubstitution { rhe, .. } => {
             reduce_types_in_expression(rhe, environment);
         },
+        SpecificationCondition { cond, .. } => 
+            reduce_types_in_expression(cond, environment),
     }
 }
 

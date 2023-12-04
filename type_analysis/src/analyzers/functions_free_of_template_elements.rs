@@ -128,6 +128,9 @@ fn analyse_statement(
             }
             analyse_expression(rhe, function_names, reports);
         },
+        SpecificationCondition { cond: arg, .. } => {
+            analyse_expression(arg, function_names, reports);
+        }
     }
 }
 

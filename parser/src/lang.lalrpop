@@ -126,6 +126,8 @@ pub ParseDefinition : Definition = {
         Some(a)
         => build_template(Meta::new(s,e), name, a, args..arge, body, parallel.is_some(), custom_gate.is_some()),
     },
+    <s:@L> "spec_tags" "{" <tag: IDENTIFIER> "}" <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
+    => build_specification(Meta::new(s,e), tag, signal, ins)
 };
 
 
@@ -283,6 +285,15 @@ ParseDeclaration : Statement = {
             ast_shortcuts::split_declaration_into_single_nodes(meta,xtype,symbols,AssignOp::AssignSignal)
     },
 };
+ParseSpecCondition : Statement = {
+    <s:@L> "spec_precondition" <exp: ParseExpression> <e:@R> 
+        => build_precondition(Meta::new(s,e),exp),
+    <s:@L> "spec_postcondition" <exp: ParseExpression> <e:@R> 
+        => build_postcondition(Meta::new(s,e),exp),
+<s:@L> "spec_fact" <exp: ParseExpression> <e:@R> 
+        => build_fact(Meta::new(s,e),exp),
+    
+};
 ParseSubstitution : Statement = {
     <s:@L> <variable: ParseExpression> <ops: ParseAssignOp> <rhe: ParseExpression> <e:@R>
     => {if let Expression::Variable {meta, name, access} = variable {
@@ -414,6 +425,9 @@ ParseStatement2 : Statement = {
 
     <subs: ParseSubstitution> Semicolon
     => subs,
+
+    <cond: ParseSpecCondition> Semicolon
+    => cond,
 
     <s:@L> <lhe: ParseExpression> "===" <rhe: ParseExpression> Semicolon <e:@R>
     => build_constraint_equality(Meta::new(s,e),lhe,rhe),
@@ -574,8 +588,11 @@ Expression13 : Expression  = {
     => build_inline_switch_op(Meta::new(s,e),cond,if_true,if_false),
 };
 
+// ops: =>
+
+Expression12 = InfixOpTier<ParseBoolImplication,Expression12a>;
 // ops: ||
-Expression12 = InfixOpTier<ParseBoolOr,Expression11>;
+Expression12a = InfixOpTier<ParseBoolOr,Expression11>;
 
 // ops: &&
 Expression11 = InfixOpTier<ParseBoolAnd,Expression10>;
@@ -688,6 +705,10 @@ ParseBoolOr : ExpressionInfixOpcode = {
 
 ParseBoolAnd : ExpressionInfixOpcode = {
     "&&" => ExpressionInfixOpcode::BoolAnd,
+};
+
+ParseBoolImplication : ExpressionInfixOpcode = {
+    "=>" => ExpressionInfixOpcode::BoolImplication,
 };
 
 ParseCmpOpCodes : ExpressionInfixOpcode = {

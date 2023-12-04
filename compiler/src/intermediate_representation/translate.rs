@@ -845,6 +845,7 @@ fn translate_infix_operator(op: ExpressionInfixOpcode) -> OperatorType {
         BitOr => OperatorType::BitOr,
         BitAnd => OperatorType::BitAnd,
         BitXor => OperatorType::BitXor,
+        BoolImplication => unreachable!(),
     }
 }
 

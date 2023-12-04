@@ -2,11 +2,70 @@ use super::{Constraint, Edge, Node, SimplificationFlags, Tree, DAG};
 use constraint_list::{ConstraintList, DAGEncoding, EncodingEdge, EncodingNode, SignalInfo, Simplifier};
 use program_structure::utils::constants::UsefulConstants;
 use std::collections::{HashSet, LinkedList};
+use crate::TreeConstraints;
+
 #[derive(Default)]
 struct CHolder {
     linear: LinkedList<Constraint>,
     equalities: LinkedList<Constraint>,
     constant_equalities: LinkedList<Constraint>,
+}
+
+fn map_tree_constraints(
+    tree: &Tree,
+    witness: &mut Vec<usize>,
+    c_holder: &mut CHolder,
+    forbidden: &mut HashSet<usize>,
+    tree_constraints: &mut TreeConstraints,
+) -> usize {
+    let mut no_constraints = 0;
+
+    for signal in &tree.signals {
+        Vec::push(witness, *signal);
+        if tree.dag.nodes[tree.node_id].is_custom_gate {
+            forbidden.insert(*signal);
+        }
+    }
+
+    tree_constraints.template_name = tree.dag.nodes[tree.node_id].template_name.clone();
+    tree_constraints.pretty_template_name = tree.dag.nodes[tree.node_id].pretty_template_name.clone();
+    tree_constraints.number_signals = tree.signals.len();
+    tree_constraints.number_inputs = tree.dag.nodes[tree.node_id].inputs_length;
+    tree_constraints.number_outputs = tree.dag.nodes[tree.node_id].outputs_length;
+    tree_constraints.preconditions = tree.preconditions.clone();
+    tree_constraints.preconditions_intermediates = tree.preconditions_intermediates.clone();
+    tree_constraints.postconditions_intermediates = tree.postconditions_intermediates.clone();
+    tree_constraints.postconditions_outputs = tree.postconditions_outputs.clone();
+    tree_constraints.facts = tree.facts.clone();
+    tree_constraints.tags_preconditions = tree.tags_preconditions.clone();
+    tree_constraints.tags_postconditions_intermediates = tree.tags_postconditions_intermediates.clone();
+    tree_constraints.tags_postconditions_outputs = tree.tags_postconditions_outputs.clone();
+    if tree_constraints.number_signals > 0{
+        tree_constraints.initial_signal = tree.signals[0];
+    }
+
+    tree_constraints.node_id = tree.node_id;
+
+    for constraint in &tree.constraints {
+        tree_constraints.constraints.push(constraint.clone());
+        if Constraint::is_constant_equality(constraint) {
+            LinkedList::push_back(&mut c_holder.constant_equalities, constraint.clone());
+        } else if Constraint::is_equality(constraint, &tree.field) {
+            LinkedList::push_back(&mut c_holder.equalities, constraint.clone());
+        } else if Constraint::is_linear(constraint) {
+            LinkedList::push_back(&mut c_holder.linear, constraint.clone());
+        } else {
+            no_constraints += 1;
+        }
+    }
+
+    for edge in Tree::get_edges(tree) {
+        let subtree = Tree::go_to_subtree(tree, edge);
+        let mut subtree_constraints = TreeConstraints::default();
+        no_constraints += map_tree_constraints(&subtree, witness, c_holder, forbidden, &mut subtree_constraints);
+        tree_constraints.subcomponents.push_back(subtree_constraints);
+    }
+    no_constraints
 }
 
 fn map_tree(
@@ -143,4 +202,16 @@ pub fn map(dag: DAG, flags: SimplificationFlags) -> ConstraintList {
         port_substitution: flags.port_substitution,
     }
     .simplify_constraints()
+}
+
+
+pub fn map_to_constraint_tree(dag: &DAG) -> TreeConstraints {
+
+    let mut c_holder = CHolder::default();
+    let mut tree_constraints = TreeConstraints::default();
+    let mut signal_map = vec![0];
+    let mut forbidden = dag.get_main().unwrap().forbidden_if_main.clone();
+    let _ = map_tree_constraints(&Tree::new(&dag), &mut signal_map, &mut c_holder,  &mut forbidden, &mut tree_constraints);
+    
+    tree_constraints
 }

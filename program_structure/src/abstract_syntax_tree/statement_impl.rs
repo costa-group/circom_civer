@@ -16,6 +16,7 @@ impl Statement {
             | InitializationBlock { meta, .. } => meta,
             | MultSubstitution { meta, ..} => meta,
             | UnderscoreSubstitution { meta, .. } => meta,
+            | SpecificationCondition {meta, ..} => meta,
         }
     }
     pub fn get_mut_meta(&mut self) -> &mut Meta {
@@ -33,6 +34,7 @@ impl Statement {
             | InitializationBlock { meta, .. } => meta,
             | MultSubstitution { meta, ..} => meta,
             | UnderscoreSubstitution { meta, .. } => meta,
+            | SpecificationCondition {meta, ..} => meta,
         }
     }
 
@@ -126,6 +128,15 @@ impl Statement {
         }
     }
 
+    pub fn is_specification_condition(&self) -> bool{
+        use Statement::SpecificationCondition;
+        if let SpecificationCondition { .. } = self {
+            true
+        } else {
+            false
+        }
+    }
+
     pub fn contains_anonymous_comp(&self) -> bool {
         use Statement::*;
         match self {
@@ -198,6 +209,10 @@ impl Statement {
             UnderscoreSubstitution { rhe, .. } => {
                 rhe.contains_anonymous_comp() 
             },
+
+            SpecificationCondition {cond, .. } => {
+                cond.contains_anonymous_comp()
+            },
             
         }
     }
@@ -236,9 +251,16 @@ impl FillMeta for Statement {
             UnderscoreSubstitution { meta, rhe, .. } => {
                 fill_underscore_substitution(meta, rhe, file_id, element_id);
             },
+            SpecificationCondition { meta, cond, .. } => 
+                fill_specification_condition(meta, cond, file_id, element_id),
             
         }
     }
+}
+
+fn fill_specification_condition(meta: &mut Meta, cond: &mut Expression, file_id: usize, elem_id: &mut usize) {
+    meta.set_file_id(file_id);
+    cond.fill(file_id, elem_id);
 }
 
 

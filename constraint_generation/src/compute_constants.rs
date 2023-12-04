@@ -1,5 +1,5 @@
 use crate::environment_utils::environment::ExecutionEnvironment as EE;
-use crate::environment_utils::slice_types::{TagInfo, AExpressionSlice};
+use crate::environment_utils::slice_types::{TagInfo, AExpressionSlice, ExpressionSlice};
 use circom_algebra::algebra::ArithmeticExpression;
 use compiler::hir::very_concrete_program::{Argument, TemplateInstance};
 use num_bigint::BigInt;
@@ -63,7 +63,8 @@ fn transform_header_into_environment(header: &[Argument]) -> EE {
     for arg in header {
         let name = arg.name.clone();
         let slice = argument_into_slice(arg);
-        execution_environment.add_variable(&name, (TagInfo::new(), slice));
+        let spec_slice = argument_into_spec_slice(arg);
+        execution_environment.add_variable(&name, (TagInfo::new(), slice, spec_slice));
     }
     execution_environment
 }
@@ -74,6 +75,14 @@ fn argument_into_slice(argument: &Argument) -> AExpressionSlice {
         argument.values.iter().map(|v| Number { value: v.clone() }).collect();
     let dimensions = argument.lengths.clone();
     AExpressionSlice::new_array(dimensions, arithmetic_expressions)
+}
+
+fn argument_into_spec_slice(argument: &Argument) -> ExpressionSlice {
+    use Expression::Number;
+    let arithmetic_expressions: Vec<Option<Expression>> =
+        argument.values.iter().map(|v| Some(Number (Meta::new(0,0), v.clone() ))).collect();
+    let dimensions = argument.lengths.clone();
+    ExpressionSlice::new_array(dimensions, arithmetic_expressions)
 }
 
 fn treat_statement(stmt: &mut Statement, context: &Context, reports: &mut ReportCollection, flags: FlagsExecution, prime: &String) {

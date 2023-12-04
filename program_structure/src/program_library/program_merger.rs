@@ -1,3 +1,5 @@
+use crate::specification_data::{SpecificationInfo, SpecificationData};
+
 use super::ast::Definition;
 use super::error_code::ReportCode;
 use super::error_definition::Report;
@@ -9,6 +11,7 @@ pub struct Merger {
     fresh_id: usize,
     function_info: FunctionInfo,
     template_info: TemplateInfo,
+    specification_info: SpecificationInfo,
 }
 impl Default for Merger {
     fn default() -> Self {
@@ -16,6 +19,7 @@ impl Default for Merger {
             fresh_id: 0,
             function_info: FunctionInfo::new(),
             template_info: TemplateInfo::new(),
+            specification_info: SpecificationInfo::new(),
         }
     }
 }
@@ -30,7 +34,7 @@ impl Merger {
         for definition in definitions {
             let (name, meta) = match definition {
                 Definition::Template { name, args, arg_location, body, meta, parallel, is_custom_gate } => {
-                    if self.contains_function(&name) || self.contains_template(&name) {
+                    if self.contains_function(&name) || self.contains_template(&name) || self.contains_specification(&name) {
                         (Option::Some(name), meta)
                     } else {
                         let new_data = TemplateData::new(
@@ -49,7 +53,7 @@ impl Merger {
                     }
                 }
                 Definition::Function { name, body, args, arg_location, meta } => {
-                    if self.contains_function(&name) || self.contains_template(&name) {
+                    if self.contains_function(&name) || self.contains_template(&name) || self.contains_specification(&name)  {
                         (Option::Some(name), meta)
                     } else {
                         let new_data = FunctionData::new(
@@ -62,6 +66,21 @@ impl Merger {
                             &mut self.fresh_id,
                         );
                         self.get_mut_function_info().insert(name.clone(), new_data);
+                        (Option::None, meta)
+                    }
+                }
+                Definition::Specification { meta, tag: name, signal, condition } => {
+                    if self.contains_function(&name) || self.contains_template(&name) || self.contains_specification(&name)  {
+                        (Option::Some(name), meta)
+                    } else {
+                        let new_data = SpecificationData::new(
+                            file_id,
+                            &mut self.fresh_id,
+                            name.clone(),
+                            signal,
+                            condition,
+                        );
+                        self.get_mut_specification_info().insert(name, new_data);
                         (Option::None, meta)
                     }
                 }
@@ -101,8 +120,18 @@ impl Merger {
         &mut self.template_info
     }
 
+    pub fn contains_specification(&self, template_name: &str) -> bool {
+        self.get_specification_info().contains_key(template_name)
+    }
+    fn get_specification_info(&self) -> &SpecificationInfo {
+        &self.specification_info
+    }
+    fn get_mut_specification_info(&mut self) -> &mut SpecificationInfo {
+        &mut self.specification_info
+    }
 
-    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo) {
-        (self.fresh_id, self.function_info, self.template_info)
+
+    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo, SpecificationInfo) {
+        (self.fresh_id, self.function_info, self.template_info, self.specification_info)
     }
 }

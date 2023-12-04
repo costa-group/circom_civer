@@ -1387,6 +1387,32 @@ pub fn normalize(c: Constraint<usize>, _field: &BigInt) -> Constraint<usize> {
     todo!()
 }
 
+#[derive(Clone, Debug)]
+pub struct ExecutedInequation<C>{
+    pub signal: C,
+    pub min: BigInt,
+    pub max: BigInt,
+} 
+impl <C> ExecutedInequation<C>{
+
+    pub fn update_bounds(&mut self, min: BigInt, max: BigInt) -> bool{
+        let mut updated = false;
+        if self.min < min{
+            self.min = min;
+            updated = true;
+        }
+        if self.max > max{
+            self.max = max;
+            updated = true;
+        } 
+        updated
+    }
+
+    pub fn implies_bounds(&self, min: &BigInt, max: &BigInt) -> bool{
+        self.min >= *min && self.max <= *max
+    }
+}
+
 #[cfg(test)]
 mod test {
     use crate::algebra::{ArithmeticExpression, Constraint, Substitution};

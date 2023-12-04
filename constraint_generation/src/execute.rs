@@ -8,7 +8,7 @@ use super::environment_utils::{
     slice_types::{
         AExpressionSlice, ArithmeticExpression as ArithmeticExpressionGen, ComponentRepresentation,
         ComponentSlice, MemoryError, TypeInvalidAccess, TypeAssignmentError, MemorySlice, 
-        SignalSlice, SliceCapacity, TagInfo, TagState
+        SignalSlice, SliceCapacity, TagInfo, TagState, ExpressionSlice
     },
 };
 
@@ -66,6 +66,7 @@ struct FoldedValue {
     pub node_pointer: Option<NodePointer>,
     pub is_parallel: Option<bool>,
     pub tags: Option<TagInfo>,
+    pub spec_vars: Option<ExpressionSlice>,
 }
 impl FoldedValue {
     pub fn valid_arithmetic_slice(f_value: &FoldedValue) -> bool {
@@ -83,6 +84,7 @@ impl Default for FoldedValue {
             node_pointer: Option::None, 
             is_parallel: Option::None, 
             tags: Option::None,
+            spec_vars: Option::None,
         }
     }
 }
@@ -532,6 +534,14 @@ fn execute_statement(
             }
             Option::None
         }
+        SpecificationCondition { is_precondition, cond, .. } => {
+            let executed_condition = execute_expression_specification(cond, program_archive, runtime, flags)?;
+            if let Option::Some(node) = actual_node {
+                node.add_specification(executed_condition, is_precondition);
+
+            }
+            Option::None
+        },
     };
     Result::Ok((res, can_be_simplified))
 }
@@ -548,7 +558,11 @@ fn execute_expression(
         Number(_, value) => {
             let a_value = AExpr::Number { value: value.clone() };
             let ae_slice = AExpressionSlice::new(&a_value);
-            FoldedValue { arithmetic_slice: Option::Some(ae_slice), ..FoldedValue::default() }
+
+            let spec_value = Expression::Number(Meta::new(0,0), value.clone());
+            let spec_slice = ExpressionSlice::new(&Some(spec_value));
+
+            FoldedValue { arithmetic_slice: Option::Some(ae_slice), spec_vars: Some(spec_slice), ..FoldedValue::default() }
         }
         Variable { meta, name, access, .. } => {
             if ExecutionEnvironment::has_signal(&runtime.environment, name) {
@@ -563,10 +577,12 @@ fn execute_expression(
         }
         ArrayInLine { meta, values, .. } => {
             let mut arithmetic_slice_array = Vec::new();
+            let mut specification_slice_array = Vec::new();
             for value in values.iter() {
                 let f_value = execute_expression(value, program_archive, runtime, flags)?;
-                let slice_value = safe_unwrap_to_arithmetic_slice(f_value, line!());
+                let (slice_value, specification_value) = safe_unwrap_to_arithmetic_slice_specifications(f_value, line!());
                 arithmetic_slice_array.push(slice_value);
+                specification_slice_array.push(specification_value)
             }
             debug_assert!(!arithmetic_slice_array.is_empty());
 
@@ -574,7 +590,9 @@ fn execute_expression(
             for dim in arithmetic_slice_array[0].route() {
                 dims.push(*dim);
             }
-            let mut array_slice = AExpressionSlice::new_with_route(&dims, &AExpr::default());
+            let mut array_slice: MemorySlice<ArithmeticExpressionGen<_>> = AExpressionSlice::new_with_route(&dims, &AExpr::default());
+            let mut array_slice_spec = ExpressionSlice::new_with_route(&dims, &None);
+
             let mut row: SliceCapacity = 0;
             while row < arithmetic_slice_array.len() {
                 let memory_insert_result = AExpressionSlice::insert_values(
@@ -589,9 +607,21 @@ fn execute_expression(
                     &mut runtime.runtime_errors,
                     &runtime.call_trace,
                 )?;
+                let memory_spec_insert_result = ExpressionSlice::insert_values(
+                    &mut array_slice_spec,
+                    &[row],
+                    &specification_slice_array[row],
+                    false
+                );
+                treat_result_with_memory_error_void(
+                    memory_spec_insert_result,
+                    meta,
+                    &mut runtime.runtime_errors,
+                    &runtime.call_trace,
+                )?;
                 row += 1;
             }
-            FoldedValue { arithmetic_slice: Option::Some(array_slice), ..FoldedValue::default() }
+            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars: Option::Some(array_slice_spec),..FoldedValue::default() }
         }
         UniformArray { meta, value, dimension, .. } => {
             let f_dimension = execute_expression(dimension, program_archive, runtime, flags)?;
@@ -603,7 +633,7 @@ fn execute_expression(
             };
 
             let f_value = execute_expression(value, program_archive, runtime, flags)?;
-            let slice_value = safe_unwrap_to_arithmetic_slice(f_value, line!());
+            let (slice_value, specification_value) = safe_unwrap_to_arithmetic_slice_specifications(f_value, line!());
             
             let mut dims = vec![usable_dimension];
             for dim in slice_value.route() {
@@ -611,6 +641,8 @@ fn execute_expression(
             }
 
             let mut array_slice = AExpressionSlice::new_with_route(&dims, &AExpr::default());
+            let mut array_slice_specifications = ExpressionSlice::new_with_route(&dims, &None);
+      
             let mut row: SliceCapacity = 0;
             while row < usable_dimension {
                 let memory_insert_result = AExpressionSlice::insert_values(
@@ -625,26 +657,59 @@ fn execute_expression(
                     &mut runtime.runtime_errors,
                     &runtime.call_trace,
                 )?;
+
+                let memory_insert_result_spec = ExpressionSlice::insert_values(
+                    &mut array_slice_specifications,
+                    &[row],
+                    &specification_value,
+                    false
+                );
+                treat_result_with_memory_error_void(
+                    memory_insert_result_spec,
+                    meta,
+                    &mut runtime.runtime_errors,
+                    &runtime.call_trace,
+                )?;
+
                 row += 1;
             }
-            FoldedValue { arithmetic_slice: Option::Some(array_slice), ..FoldedValue::default() }
+            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars: Option::Some(array_slice_specifications), ..FoldedValue::default() }
         }
         InfixOp { meta, lhe, infix_op, rhe, .. } => {
             let l_fold = execute_expression(lhe, program_archive, runtime, flags)?;
             let r_fold = execute_expression(rhe, program_archive, runtime, flags)?;
-            let l_value = safe_unwrap_to_single_arithmetic_expression(l_fold, line!());
-            let r_value = safe_unwrap_to_single_arithmetic_expression(r_fold, line!());
+            let (l_value, l_spec) = safe_unwrap_to_single_arithmetic_expression_specification(l_fold, line!());
+            let (r_value, r_spec) = safe_unwrap_to_single_arithmetic_expression_specification(r_fold, line!());
+            
             let r_value = execute_infix_op(meta, *infix_op, &l_value, &r_value, runtime)?;
             let r_slice = AExpressionSlice::new(&r_value);
-            FoldedValue { arithmetic_slice: Option::Some(r_slice), ..FoldedValue::default() }
+            
+            let r_spec = match (l_spec, r_spec){
+                (Some(l_expr), Some(r_expr)) => {
+                    execute_infix_op_specification(meta.clone(), *infix_op, l_expr, r_expr)
+                }
+                _ => None,
+            };
+            let r_spec_slice = ExpressionSlice::new(&r_spec);
+
+            FoldedValue { arithmetic_slice: Option::Some(r_slice), spec_vars: Option::Some(r_spec_slice), ..FoldedValue::default() }
         }
-        PrefixOp { prefix_op, rhe, .. } => {
+        PrefixOp { prefix_op, rhe, meta } => {
             let folded_value = execute_expression(rhe, program_archive, runtime, flags)?;
-            let arithmetic_value =
-                safe_unwrap_to_single_arithmetic_expression(folded_value, line!());
+            let (arithmetic_value, spec_value) =
+                safe_unwrap_to_single_arithmetic_expression_specification(folded_value, line!());
+
             let arithmetic_result = execute_prefix_op(*prefix_op, &arithmetic_value, runtime)?;
             let slice_result = AExpressionSlice::new(&arithmetic_result);
-            FoldedValue { arithmetic_slice: Option::Some(slice_result), ..FoldedValue::default() }
+
+            let spec_result = if spec_value.is_some(){
+                execute_prefix_op_specification(meta.clone(), *prefix_op, spec_value.unwrap())
+            } else{
+                None
+            };
+            let slice_spec =  ExpressionSlice::new(&spec_result);
+
+            FoldedValue { arithmetic_slice: Option::Some(slice_result), spec_vars: Option::Some(slice_spec), ..FoldedValue::default() }
         }
         InlineSwitchOp { cond, if_true, if_false, .. } => {
             let f_cond = execute_expression(cond, program_archive, runtime, flags)?;
@@ -846,7 +911,7 @@ fn perform_assign(
         debug_assert!(accessing_information.signal_access.is_none());
         debug_assert!(accessing_information.after_signal.is_empty());
         let environment_result = ExecutionEnvironment::get_mut_variable_mut(&mut runtime.environment, symbol);
-        let (symbol_tags, symbol_content) = treat_result_with_environment_error(
+        let (symbol_tags, symbol_content, spec_content) = treat_result_with_environment_error(
             environment_result,
             meta,
             &mut runtime.runtime_errors,
@@ -857,10 +922,23 @@ fn perform_assign(
         } else{
             TagInfo::new()
         };
+        
+        let copy_spec_vars = if r_folded.spec_vars.is_some(){
+            Some(r_folded.spec_vars.as_ref().unwrap().clone())
+        } else{
+            None
+        };
         let mut r_slice = safe_unwrap_to_arithmetic_slice(r_folded, line!());
+
+        let mut r_spec = if copy_spec_vars.is_some(){
+            copy_spec_vars.unwrap().clone()
+        } else{
+            ExpressionSlice::new_with_route(r_slice.route(), &None)
+        };
         if runtime.block_type == BlockType::Unknown {
             r_slice = AExpressionSlice::new_with_route(r_slice.route(), &AExpr::NonQuadratic);
             r_tags = TagInfo::new();
+            r_spec = ExpressionSlice::new_with_route(r_slice.route(), &None);
         }
         if accessing_information.undefined {
             let new_value =
@@ -873,6 +951,19 @@ fn perform_assign(
                 &mut runtime.runtime_errors,
                 &runtime.call_trace,
             )?;
+
+            let new_value_spec =
+                ExpressionSlice::new_with_route(spec_content.route(), &None);
+            let memory_result =
+                ExpressionSlice::insert_values(spec_content, &vec![], &new_value_spec, false);
+            treat_result_with_memory_error_void(
+                memory_result,
+                meta,
+                &mut runtime.runtime_errors,
+                &runtime.call_trace,
+            )?;
+
+
             *symbol_tags = TagInfo::new();
         } else {
 
@@ -888,6 +979,20 @@ fn perform_assign(
                 &mut runtime.runtime_errors,
                 &runtime.call_trace,
             )?;
+
+            let memory_result_spec = ExpressionSlice::insert_values(
+                spec_content,
+                &accessing_information.before_signal,
+                &r_spec,
+                false
+            );
+            treat_result_with_memory_error_void(
+                memory_result_spec,
+                meta,
+                &mut runtime.runtime_errors,
+                &runtime.call_trace,
+            )?;
+
             // in case it is a complete assignment assign the tags, if not set the tags to empty
             if AExpressionSlice::get_number_of_cells(symbol_content) == AExpressionSlice::get_number_of_cells(&r_slice){
                 *symbol_tags = r_tags;
@@ -1244,6 +1349,8 @@ fn perform_assign(
                         is_parallel: component.is_parallel,
                         goes_to: node_pointer,
                         indexed_with: accessing_information.before_signal.clone(),
+                        preconditions: component.inputs_tags.clone(),
+                        postconditions: component.outputs_tags.clone(),
                     };
                     actual_node.add_arrow(full_symbol.clone(), data);
                 } else {
@@ -1334,6 +1441,8 @@ fn perform_assign(
                         goes_to: node_pointer,
                         is_parallel: component.is_parallel,
                         indexed_with: accessing_information.before_signal.clone(),
+                        preconditions: component.inputs_tags.clone(),
+                        postconditions: component.outputs_tags.clone(),
                     };
                     let component_symbol = create_component_symbol(symbol, &accessing_information);
                     actual_node.add_arrow(component_symbol, data);
@@ -1502,20 +1611,27 @@ fn execute_variable(
     debug_assert!(access_information.after_signal.is_empty());
     let indexing = access_information.before_signal;
     let environment_response = ExecutionEnvironment::get_variable_res(&runtime.environment, symbol);
-    let (var_tag, ae_slice) = treat_result_with_environment_error(
+    let (var_tag, ae_slice, spec_slice) = treat_result_with_environment_error(
         environment_response,
         meta,
         &mut runtime.runtime_errors,
         &runtime.call_trace,
     )?;
     let memory_response = AExpressionSlice::access_values(&ae_slice, &indexing);
+    let memory_response_spec = ExpressionSlice:: access_values(&spec_slice, &indexing);
     let ae_slice = treat_result_with_memory_error(
         memory_response,
         meta,
         &mut runtime.runtime_errors,
         &runtime.call_trace,
     )?;
-    Result::Ok(FoldedValue { arithmetic_slice: Option::Some(ae_slice), tags: Option::Some(var_tag.clone()), ..FoldedValue::default() })
+    let spec_slice = treat_result_with_memory_error(
+        memory_response_spec,
+        meta,
+        &mut runtime.runtime_errors,
+        &runtime.call_trace,
+    )?;
+    Result::Ok(FoldedValue { arithmetic_slice: Option::Some(ae_slice), tags: Option::Some(var_tag.clone()), spec_vars: Option::Some(spec_slice), ..FoldedValue::default() })
 }
 
 fn execute_signal(
@@ -1529,7 +1645,8 @@ fn execute_signal(
     let access_information = treat_accessing(meta, access, program_archive, runtime, flags)?;
     if access_information.undefined {
         let arithmetic_slice = Option::Some(AExpressionSlice::new(&AExpr::NonQuadratic));
-        return Result::Ok(FoldedValue { arithmetic_slice, ..FoldedValue::default() });
+        let spec_slice = Option::Some(ExpressionSlice::new(&None));
+        return Result::Ok(FoldedValue { arithmetic_slice, spec_vars: spec_slice, ..FoldedValue::default() });
     }
     debug_assert!(access_information.after_signal.is_empty());
     let indexing = &access_information.before_signal;
@@ -1556,8 +1673,11 @@ fn execute_signal(
                 // access only allowed when (1) it is value defined by user or (2) it is completely assigned
                 if state.value_defined || state.complete{
                     let a_value = AExpr::Number { value: value_tag.clone() };
+                    let spec_value = Expression::Number(meta.clone(), value_tag.clone());
                     let ae_slice = AExpressionSlice::new(&a_value);
-                    Result::Ok(FoldedValue { arithmetic_slice: Option::Some(ae_slice), ..FoldedValue::default() })
+                    let spec_slice = ExpressionSlice::new(&Some(spec_value));
+
+                    Result::Ok(FoldedValue { arithmetic_slice: Option::Some(ae_slice), spec_vars: Option::Some(spec_slice), ..FoldedValue::default() })
                 } else{
                     let error = MemoryError::TagValueNotInitializedAccess;
                     treat_result_with_memory_error(
@@ -1592,12 +1712,15 @@ fn execute_signal(
         )?;
         let full_symbol = create_symbol(symbol, &access_information);
         let signal_access = signal_to_arith(full_symbol, signal_slice);
-        let arith_slice = treat_result_with_memory_error(
+        let (arith_slice, spec_slice) = treat_result_with_memory_error(
             signal_access,
             meta,
             &mut runtime.runtime_errors,
             &runtime.call_trace,
         )?;
+
+
+
 
         let mut tags_propagated = TagInfo::new();
         for (tag, value) in tags{
@@ -1611,24 +1734,27 @@ fn execute_signal(
 
         Result::Ok(FoldedValue {
             arithmetic_slice: Option::Some(arith_slice),
+            spec_vars: Option::Some(spec_slice),
             tags: Option::Some(tags_propagated),
             ..FoldedValue::default()
         })
     }
 }
 
-fn signal_to_arith(symbol: String, slice: SignalSlice) -> Result<AExpressionSlice, MemoryError> {
+fn signal_to_arith(symbol: String, slice: SignalSlice) -> Result<(AExpressionSlice, ExpressionSlice), MemoryError> {
     let mut expressions = vec![];
+    let mut expressions_spec = vec![];
     let (route, values) = slice.destruct();
     let mut symbols = vec![];
     unfold_signals(symbol, 0, &route, &mut symbols);
     let mut index = 0;
     while index < symbols.len() && values[index] {
         expressions.push(AExpr::Signal { symbol: symbols[index].clone() });
+        expressions_spec.push(Some(Expression::Variable{meta: Meta::new(0,0), name: symbols[index].clone(), access: vec![]}));
         index += 1;
     }
     if index == symbols.len() {
-        Result::Ok(AExpressionSlice::new_array(route, expressions))
+        Result::Ok((AExpressionSlice::new_array(route.clone(), expressions), ExpressionSlice::new_array(route, expressions_spec)))
     } else {
         Result::Err(MemoryError::InvalidAccess(TypeInvalidAccess::NoInitializedSignal))
     }
@@ -1724,8 +1850,9 @@ fn execute_component(
         )?;
         let symbol = create_symbol(symbol, &access_information);
         let result = signal_to_arith(symbol, slice)
-            .map(|s| FoldedValue { 
-                arithmetic_slice: Option::Some(s),
+            .map(|(a_slice, spec_slice)| FoldedValue { 
+                arithmetic_slice: Option::Some(a_slice),
+                spec_vars: Option::Some(spec_slice),
                 tags: Option::Some(tags_signal.clone()),
                 ..FoldedValue::default() 
             });
@@ -1772,10 +1899,37 @@ fn prepare_environment_for_call(
     let mut environment = ExecutionEnvironment::new();
     debug_assert_eq!(arg_names.len(), arg_values.len());
     for (arg_name, arg_value) in arg_names.iter().zip(arg_values) {
-        ExecutionEnvironment::add_variable(&mut environment, arg_name, (TagInfo::new(), arg_value.clone()));
+        let arg_value_spec = transform_arith_slice_to_expression_slice(arg_value);
+        ExecutionEnvironment::add_variable(&mut environment, arg_name, (TagInfo::new(), arg_value.clone(), arg_value_spec));
     }
     environment
 }
+
+fn transform_arith_slice_to_expression_slice(
+    expr_slice: &AExpressionSlice
+) -> ExpressionSlice{
+    let mut expressions_spec = vec![];
+
+    
+    let mut row: SliceCapacity = 0;
+    while row < AExpressionSlice::get_number_of_cells(expr_slice) {
+        let expr = AExpressionSlice::get_reference_to_single_value_by_index_or_break(expr_slice, row);
+        expressions_spec.push(transform_arith_expression_to_expression(expr));
+        row = row + 1;
+    }
+    ExpressionSlice::new_array(expr_slice.route().to_vec(), expressions_spec)
+}
+
+fn transform_arith_expression_to_expression(
+    expr: &AExpr,
+) -> Option<Expression>{
+    match expr{
+        AExpr::Number{value}=> Some(Expression::Number(Meta::new(0,0), value.clone())),
+        _ => None
+
+    }
+}
+
 
 fn execute_function_call(
     id: &str,
@@ -1811,20 +1965,27 @@ fn execute_template_call(
     let mut args_to_values = BTreeMap::new();
     debug_assert_eq!(args_names.len(), parameter_values.len());
     let mut instantiation_name = format!("{}(", id);
+    let mut pretty_name = format!("{}(", id);
     let mut not_empty_name = false;
     for (name, value) in args_names.iter().zip(parameter_values) {
         instantiation_name.push_str(&format!("{},", value.to_string()));
+        pretty_name.push_str(&format!("{},", value.to_string()));
         not_empty_name = true;
         args_to_values.insert(name.clone(), value.clone());
     }
-    for (_input, input_tags) in &tag_values{
-        for (_tag, value) in input_tags {
+    if not_empty_name  {
+        pretty_name.pop();
+    }
+    pretty_name.push(')');
+    for (input, input_tags) in &tag_values{
+        for (tag, value) in input_tags {
             if value.is_none(){
                 instantiation_name.push_str("null,");
             }
             else{
                 let value = value.clone().unwrap();
                 instantiation_name.push_str(&format!("{},", value.to_string()));
+                pretty_name.push_str(&format!("\n- Input signal {} with tag {} with value {}", input, tag, value.to_string()));
             }
             not_empty_name = true;
         }
@@ -1845,6 +2006,7 @@ fn execute_template_call(
             is_main,
             id.to_string(),
             instantiation_name,
+            pretty_name,
             args_to_values,
             tag_values,
             code,
@@ -1946,6 +2108,7 @@ fn execute_infix_op(
         BitOr => Result::Ok(AExpr::bit_or(l_value, r_value, field)),
         BitAnd => Result::Ok(AExpr::bit_and(l_value, r_value, field)),
         BitXor => Result::Ok(AExpr::bit_xor(l_value, r_value, field)),
+        BoolImplication => unreachable!(),
     };
     treat_result_with_arithmetic_error(
         possible_result,
@@ -1969,6 +2132,246 @@ fn execute_prefix_op(
     };
     Result::Ok(result)
 }
+
+//************************************************* Specifications execution *****************************************
+
+
+pub fn execute_tag_expression(
+    expression: &crate::ast::Expression, 
+    name_signal: &String,
+    value_tag: &Option<BigInt>,
+)-> Expression{
+    use program_structure::ast::Expression::*;
+    match expression{
+        Number(_,_) => {
+            expression.clone()
+        }
+        Variable { meta, name, access, .. } => {
+            if name == name_signal && access.is_empty(){
+                expression.clone()
+            } else{
+                if value_tag.is_some(){                   
+                    Expression::Number(meta.clone(),  value_tag.as_ref().unwrap().clone())
+                }
+                else{
+                    unreachable!("Accesing to the value of a tag that does not contain value");
+                }
+            }
+
+        }
+        InfixOp { meta, lhe, infix_op, rhe, .. } => {
+            let l_value = execute_tag_expression(lhe, name_signal, value_tag);
+            let r_value = execute_tag_expression(rhe, name_signal, value_tag);
+            execute_infix_op_specification(meta.clone(), *infix_op, l_value, r_value).unwrap()
+        }
+        PrefixOp {meta,  prefix_op, rhe, .. } => {
+            let value = execute_tag_expression(rhe, name_signal, value_tag);
+            execute_prefix_op_specification(meta.clone(), *prefix_op, value).unwrap()
+        }
+        _ => {unreachable!("The rest of the expressions are not valid."); }
+    }
+}
+
+
+
+fn execute_expression_specification(
+    expression: &crate::ast::Expression, 
+    program_archive: &ProgramArchive,
+    runtime: &mut RuntimeInformation,
+    flags: FlagsExecution
+)-> Result<Expression, ()>{
+    use program_structure::ast::Expression::*;
+    match expression{
+        Number(_,_) => {
+            Ok(expression.clone())
+        }
+        Variable { meta, name, access, .. } => {
+            let possible_result = if ExecutionEnvironment::has_signal(&runtime.environment, name) {
+                execute_signal(meta, name, access, program_archive, runtime, flags)?
+            } else if ExecutionEnvironment::has_component(&runtime.environment, name) {
+                execute_component(meta, name, access, program_archive, runtime, flags)?
+            } else if ExecutionEnvironment::has_variable(&runtime.environment, name) {
+                execute_variable(meta, name, access, program_archive, runtime, flags)?
+            } else {
+                unreachable!()
+            };
+
+            match possible_result.spec_vars{
+                Some(spec_slice) =>{
+                    Ok(MemorySlice::unwrap_to_single(spec_slice).unwrap())
+                }
+                None => {
+                    Err(())
+                }
+            }
+
+        }
+        InfixOp { meta, lhe, infix_op, rhe, .. } => {
+            let l_value = execute_expression_specification(lhe, program_archive, runtime, flags)?;
+            let r_value = execute_expression_specification(rhe, program_archive, runtime, flags)?;
+            Ok(execute_infix_op_specification(meta.clone(), *infix_op, l_value, r_value).unwrap())
+    
+        }
+        PrefixOp {meta,  prefix_op, rhe, .. } => {
+            let value = execute_expression_specification(rhe, program_archive, runtime, flags)?;
+            Ok(execute_prefix_op_specification(meta.clone(), *prefix_op, value).unwrap())
+    
+        }
+        
+        _ => {unreachable!("The rest of the expressions are not valid."); }
+    }
+}
+
+fn execute_infix_op_specification(
+    meta: Meta, 
+    infix: crate::ast::ExpressionInfixOpcode,
+    l_value: Expression,
+    r_value: Expression,
+) -> Option<Expression> {
+    use crate::ast::ExpressionInfixOpcode::*;
+    use num_traits::{ToPrimitive, pow};
+    if l_value.is_number() && r_value.is_number(){
+
+        match (l_value, r_value){
+            (Expression::Number(_, v_l), Expression::Number(_, v_r)) =>{
+                let result = match infix{
+                    Mul => v_l * v_r,
+                    Add => v_l + v_r,
+                    Sub => v_l - v_r,
+                    Div => {
+                        if v_r != BigInt::from(0){
+                            v_l / v_r
+                        } else{
+                            unreachable!("division by zero")
+                        }
+                    }
+                    Pow => pow(v_l.clone(), v_r.to_usize().unwrap()),
+                    IntDiv => {
+                        if v_r != BigInt::from(0){
+                            v_l / v_r
+                        } else{
+                            unreachable!("division by zero")
+                        }
+                    }
+                    ShiftL => {
+                        v_l * (pow(BigInt::from(2), v_r.to_usize().unwrap()))
+                    }
+                    ShiftR => {
+                        v_l / (pow(BigInt::from(2), v_r.to_usize().unwrap()))
+                    }
+                    Mod => {
+                        if v_r != BigInt::from(0){
+                            v_l % v_r
+                        } else{
+                            unreachable!("division by zero")
+                        }
+                    }
+                    LesserEq =>{
+                        if v_l <= v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    GreaterEq =>{
+                        if v_l >= v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    Lesser =>{
+                        if v_l <=v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    Greater =>{
+                        if v_l > v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    Eq =>{
+                        if v_l == v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    NotEq =>{
+                        if v_l != v_r{
+                            BigInt::from(1)
+                        } else{
+                            BigInt::from(0)
+                        }
+                    }
+                    BitOr => v_l | v_r,
+                    BitAnd => v_l & v_r,
+                    BitXor => v_l * v_r,
+                    BoolOr => {
+                        if v_l == BigInt::from(0) && v_r == BigInt::from(0){
+                            BigInt::from(0)
+                        } else{
+                            BigInt::from(1)
+                        }
+                    }
+                    BoolAnd => {
+                        if v_l == BigInt::from(0) || v_r == BigInt::from(0){
+                            BigInt::from(0)
+                        } else{
+                            BigInt::from(1)
+                        }
+                    }
+
+                    BoolImplication =>{
+                        if v_l == BigInt::from(0){
+                            BigInt::from(1)
+                        } else{
+                            v_r
+                        }
+                    }
+                };
+                Some(Expression::Number(meta, result))
+
+            }
+            _ => {None}
+        }
+
+
+    } else{
+        Some(Expression::InfixOp { meta, lhe: Box::new(l_value), infix_op: infix, rhe: Box::new(r_value)})
+    }
+}
+
+
+fn execute_prefix_op_specification(
+    meta: Meta, 
+    prefix_op: crate::ast::ExpressionPrefixOpcode,
+    value: Expression,
+) -> Option<Expression> {
+    use crate::ast::ExpressionPrefixOpcode::*;
+    if value.is_number(){
+        match value{
+            Expression::Number(_, v) =>{
+                let result = match prefix_op {
+                    Sub => -v,
+                    BoolNot => 1 - v,
+                    _ => return None
+                };
+                Some(Expression::Number(meta, result))
+            }
+            _ => None,
+        }
+    } else{
+        Some(Expression::PrefixOp { meta, rhe: Box::new(value), prefix_op})
+
+    }
+}
+
+
 
 //************************************************* Indexing support *************************************************
 
@@ -2126,6 +2529,17 @@ fn safe_unwrap_to_arithmetic_slice(folded_value: FoldedValue, line: u32) -> AExp
     debug_assert!(FoldedValue::valid_arithmetic_slice(&folded_value), "Caused by call at {}", line);
     folded_value.arithmetic_slice.unwrap()
 }
+
+fn safe_unwrap_to_single_arithmetic_expression_specification(folded_value: FoldedValue, line: u32) -> (AExpr, Option<Expression>) {
+    let (slice_result_arith, slice_result_spec) = safe_unwrap_to_arithmetic_slice_specifications(folded_value, line);
+    (safe_unwrap_to_single(slice_result_arith, line), safe_unwrap_to_single(slice_result_spec, line))
+
+}
+fn safe_unwrap_to_arithmetic_slice_specifications(folded_value: FoldedValue, line: u32) -> (AExpressionSlice, ExpressionSlice){
+    debug_assert!(FoldedValue::valid_arithmetic_slice(&folded_value), "Caused by call at {}", line);
+    (folded_value.arithmetic_slice.unwrap(), folded_value.spec_vars.unwrap())
+}
+
 fn safe_unwrap_to_valid_node_pointer(folded_value: FoldedValue, line: u32) -> (NodePointer, bool) {
     debug_assert!(FoldedValue::valid_node_pointer(&folded_value), "Caused by call at {}", line);
     (folded_value.node_pointer.unwrap(), folded_value.is_parallel.unwrap())

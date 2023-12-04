@@ -31,7 +31,15 @@ pub struct Input {
     pub no_rounds: usize,
     pub flag_verbose: bool,
     pub prime: String,
-    pub link_libraries : Vec<PathBuf>
+    pub link_libraries : Vec<PathBuf>,
+    pub spec_libraries : Vec<String>,
+    pub civer : bool,
+    pub verification_timeout: u64,
+    pub check_tags: bool,
+    pub check_postconditions: bool,
+    pub check_safety: bool,
+    pub add_tags_info: bool,
+    pub add_postconditions_info: bool,
 }
 
 
@@ -64,6 +72,7 @@ impl Input {
         let output_js_path = Input::build_folder(&output_path, &file_name, JS);
         let o_style = input_processing::get_simplification_style(&matches)?;
         let link_libraries = input_processing::get_link_libraries(&matches);
+        let (spec_libraries, civer) = input_processing::get_spec_libraries(&matches);
         Result::Ok(Input {
             //field: P_BN128,
             input_program: input,
@@ -84,7 +93,7 @@ impl Input {
             ),
             wat_flag:input_processing::get_wat(&matches),
             wasm_flag: input_processing::get_wasm(&matches),
-            c_flag: c_flag,
+            c_flag: input_processing::get_c(&matches),
             r1cs_flag: input_processing::get_r1cs(&matches),
             sym_flag: input_processing::get_sym(&matches),
             main_inputs_flag: input_processing::get_main_inputs_log(&matches),
@@ -99,7 +108,15 @@ impl Input {
             flag_old_heuristics: input_processing::get_flag_old_heuristics(&matches),
             flag_verbose: input_processing::get_flag_verbose(&matches), 
             prime: input_processing::get_prime(&matches)?,
-            link_libraries
+            link_libraries,
+            spec_libraries,
+            civer,
+            verification_timeout: input_processing::get_verification_timeout(&matches),
+            check_tags: input_processing::get_flag_check_tags(&matches),
+            check_postconditions: input_processing::get_flag_check_postconditions(&matches),
+            check_safety: input_processing::get_flag_check_safety(&matches),
+            add_tags_info: input_processing::get_flag_add_tags_info(&matches),
+            add_postconditions_info: input_processing::get_flag_add_postconditions_info(&matches),
         })
     }
 
@@ -118,6 +135,10 @@ impl Input {
 
     pub fn get_link_libraries(&self) -> &Vec<PathBuf> {
         &self.link_libraries
+    } 
+    
+    pub fn get_spec_libraries(&self) -> &Vec<String> {
+        &self.spec_libraries
     }
 
     pub fn input_file(&self) -> &str {
@@ -209,6 +230,30 @@ impl Input {
     pub fn prime(&self) -> String{
         self.prime.clone()
     }
+
+    pub(crate) fn civer(&self) -> bool {
+        self.civer
+    }
+
+    pub fn verification_timeout(&self) -> u64{
+        self.verification_timeout
+    }
+    pub fn check_tags(&self) -> bool {
+        self.check_tags
+    }
+    pub fn check_postconditions(&self) -> bool {
+        self.check_postconditions
+    }
+    pub fn check_safety(&self) -> bool {
+        self.check_safety
+    }
+    pub fn add_tags_info(&self) -> bool {
+        self.add_tags_info
+    }
+    pub fn add_postconditions_info(&self) -> bool {
+        self.add_postconditions_info
+    }
+
 }
 mod input_processing {
     use ansi_term::Colour;
@@ -310,6 +355,35 @@ mod input_processing {
     pub fn get_flag_old_heuristics(matches: &ArgMatches) -> bool {
         matches.is_present("flag_old_heuristics")
     }
+
+    pub fn get_verification_timeout(matches: &ArgMatches) -> u64 {
+        let has_max_rule_2 = matches.is_present("flag_verification_timeout");
+        if has_max_rule_2{
+            let max_value = matches.value_of("flag_verification_timeout").unwrap();
+            u64::from_str_radix(max_value, 10).unwrap()
+        } else{
+            5000
+        }
+    }
+
+    pub fn get_flag_check_tags(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_check_tags")
+    }
+    pub fn get_flag_check_postconditions(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_check_postconditions")
+    }
+    pub fn get_flag_check_safety(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_check_safety")
+    }
+    pub fn get_flag_add_tags_info(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_add_tags_info")
+    }
+    pub fn get_flag_add_postconditions_info(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_add_postconditions_info")
+    }
+
+
+
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
         
         match matches.is_present("prime"){
@@ -454,6 +528,15 @@ mod input_processing {
                 .help("Adds directory to library search path"),
             )
             .arg(
+                Arg::with_name("spec_libraries")
+                .long("civer")
+                .takes_value(true)
+                .multiple(true)
+                .number_of_values(1)   
+                .display_order(330) 
+                .help("Adds the specification libraries to be compiled"),
+            )
+            .arg(
                 Arg::with_name("print_c")
                     .long("c")
                     .short("c")
@@ -491,6 +574,49 @@ mod input_processing {
                     .display_order(980)
                     .help("Applies the old version of the heuristics when performing linear simplification"),
             )
+            
+            .arg(
+                Arg::with_name("flag_verification_timeout")
+                    .long("verification_timeout")
+                    .takes_value(true)
+                    .display_order(980)
+                    .help("Indicates the timeout (in miliseconds) used by z3 to check the the correctness of the circuit. By default: 5000ms"),
+            )
+            .arg(
+                Arg::with_name("flag_check_tags")
+                    .long("check_tags")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER checks the tags of the circuit"),
+            )
+            .arg(
+                Arg::with_name("flag_check_postconditions")
+                    .long("check_postconditions")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER checks the postconditions of the circuit"),
+            )
+            .arg(
+                Arg::with_name("flag_check_safety")
+                    .long("check_safety")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER checks the weak safety of the circuit"),
+            )
+            .arg(
+                Arg::with_name("flag_add_tags_info")
+                    .long("add_tags_info")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER adds the information given by the tags of the outputs when proving safety/postconditions"),
+            )
+            .arg(
+                Arg::with_name("flag_add_postconditions_info")
+                    .long("add_postconditions_info")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER adds the information given by the postconditions when proving safety"),
+            )
             .arg (
                 Arg::with_name("prime")
                     .short("prime")
@@ -512,5 +638,18 @@ mod input_processing {
             }
         }
         link_libraries
+    }
+
+    pub fn get_spec_libraries(matches: &ArgMatches) -> (Vec<String>,bool) {
+        let mut spec_libraries = Vec::new();
+        let m = matches.values_of("spec_libraries");
+        let mut civer = false;
+        if let Some(paths) = m {
+            civer = true;
+            for path in paths.into_iter() {
+                spec_libraries.push(path.to_string());
+            }
+        }
+        (spec_libraries, civer)
     }
 }

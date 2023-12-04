@@ -124,7 +124,7 @@ impl ExecutedProgram {
         }
 
         for exe in &mut self.model {
-            exe.insert_in_dag(&mut dag);
+            exe.insert_in_dag(&mut dag, &program.specifications);
         }
 
         for exe in self.model {

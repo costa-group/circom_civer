@@ -20,6 +20,7 @@ pub fn apply_syntactic_sugar(program_archive : &mut  ProgramArchive) -> Result<(
 
     for (_name, t) in &mut program_archive.templates {
         let old_body = t.get_body().clone();
+        check_implications_in_statement(&old_body)?;
         check_anonymous_components_statement(&old_body)?;
         let (new_body, component_decs, variable_decs, mut substitutions) = remove_anonymous_from_statement(&old_templates, &program_archive.file_library, old_body, &None)?;
         if let Statement::Block { meta, mut stmts } = new_body {
@@ -36,8 +37,6 @@ pub fn apply_syntactic_sugar(program_archive : &mut  ProgramArchive) -> Result<(
             unreachable!()
         }
     }
-
-
     for (_, t) in &mut program_archive.functions {
         let old_body = t.get_body().clone();
         if old_body.contains_anonymous_comp(){
@@ -51,6 +50,113 @@ pub fn apply_syntactic_sugar(program_archive : &mut  ProgramArchive) -> Result<(
     Result::Ok(())
 }
 
+fn check_implications_in_statement(stm : &Statement,
+) -> Result<(), Report>{
+    let r = match stm {
+        Statement::SpecificationCondition { .. } => Result::Ok(()),
+        Statement::IfThenElse { meta, cond, if_case, else_case } => {
+            if cond.contains_implication_expression() {
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                check_implications_in_statement(if_case)?;
+                if else_case.is_some(){
+                    check_implications_in_statement(else_case.as_ref().unwrap())?;
+                }
+                Result::Ok(())
+            }
+        },
+        Statement::While { meta, cond, stmt } => {
+            if cond.contains_implication_expression() {
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                check_implications_in_statement(stmt)
+            }
+        },
+        Statement::Return { meta, value } => {
+            if value.contains_implication_expression(){
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                Result::Ok(())
+            }
+        },
+        Statement::Assert { meta, arg } => {
+            if arg.contains_implication_expression(){
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                Result::Ok(())
+            }
+        },
+        Statement::ConstraintEquality { meta, lhe, rhe } => {
+            if lhe.contains_implication_expression() || rhe.contains_implication_expression() {
+                Result::Err(implication_inside_condition_error(meta.clone()))            }
+            else{
+                Result::Ok(()) 
+            }
+        },
+        Statement::InitializationBlock {initializations, .. } => {
+            for stmt in initializations {
+                check_implications_in_statement(stmt)?;
+            }
+            Result::Ok(())
+        },
+        Statement::Declaration { meta, dimensions, .. } => {
+            for exp in dimensions{
+                if exp.contains_implication_expression(){
+                    return Result::Err(implication_inside_condition_error(meta.clone()));
+                }
+            }
+            Result::Ok(())
+        },
+        Statement::Substitution { meta, access, rhe, .. } => {
+            use program_structure::ast::Access::ComponentAccess;
+            use program_structure::ast::Access::ArrayAccess;
+            for acc in access{
+                match acc{
+                    ArrayAccess(exp) =>{
+                        if exp.contains_implication_expression(){
+                            return Result::Err(implication_inside_condition_error(meta.clone()));
+                        }
+                    },
+                    ComponentAccess(_)=>{},
+                }
+            }
+            if rhe.contains_implication_expression(){
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                Result::Ok(())
+            }
+        },
+        Statement::MultSubstitution { meta, lhe, rhe, .. } => {
+            if lhe.contains_implication_expression() {
+                Result::Err(implication_inside_condition_error(meta.clone()))
+            } else{
+                if rhe.contains_implication_expression(){
+                    Result::Err(implication_inside_condition_error(meta.clone()))
+                } else{
+                    Result::Ok(())
+                }
+            }
+        },
+        Statement::UnderscoreSubstitution { .. } => unreachable!(),
+        Statement::LogCall { meta, args } => {
+            for arg in args {
+                if let program_structure::ast::LogArgument::LogExp( exp ) = arg {
+                    if exp.contains_implication_expression() {
+                        return Result::Err(implication_inside_condition_error(meta.clone()))
+                    }
+                }
+            }
+            Result::Ok(())
+        },
+        Statement::Block {  stmts, .. } => {
+            for stmt in stmts {
+                check_implications_in_statement(stmt)?;
+            }
+            Result::Ok(())
+        },
+    };
+    r
+}
 
 fn check_anonymous_components_statement(
     stm : &Statement,
@@ -164,8 +270,15 @@ fn check_anonymous_components_statement(
             } else{
                 check_anonymous_components_expression(rhe)
             }
-        }
+        },
         Statement::UnderscoreSubstitution { .. } => unreachable!(),
+        Statement::SpecificationCondition { meta, cond, .. } => {
+            if cond.contains_anonymous_comp() {
+                Result::Err(anonymous_general_error(meta.clone(), "An anonymous component cannot be used inside an assert".to_string()))
+            } else{
+                Result::Ok(())
+            }
+        },
     }
 }
 
@@ -689,6 +802,14 @@ fn check_tuples_statement(stm: &Statement)-> Result<(), Report>{
             check_tuples_expression(rhe)
         }
         Statement::UnderscoreSubstitution { .. } => unreachable!(),
+        Statement::SpecificationCondition { meta, cond, .. } => {
+            if cond.contains_tuple(){
+                Result::Err(tuple_general_error(meta.clone(),"A tuple cannot be used in the specification".to_string()))       
+            }
+            else{ 
+                Result::Ok(())
+            }
+        },
     }
 }
 

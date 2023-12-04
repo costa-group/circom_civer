@@ -3,10 +3,14 @@ use circom_algebra::algebra::ArithmeticExpression;
 use compiler::hir::very_concrete_program::*;
 use dag::DAG;
 use num_bigint::BigInt;
-use program_structure::ast::{SignalType, Statement};
-use std::collections::{HashMap, HashSet};
+use program_structure::ast::{SignalType, Statement, Expression, TypeSpecification};
+use std::collections::{HashMap, HashSet, LinkedList};
 use crate::execution_data::AExpressionSlice;
 use crate::execution_data::TagInfo;
+use program_structure::specification_data::SpecificationInfo;
+
+
+use program_structure::ast::Expression::*;
 
 
 struct Connexion {
@@ -64,6 +68,7 @@ pub struct ExecutedTemplate {
     pub code: Statement,
     pub template_name: String,
     pub report_name: String,
+    pub pretty_name: String,
     pub inputs: SignalCollector,
     pub outputs: SignalCollector,
     pub intermediates: SignalCollector,
@@ -79,6 +84,14 @@ pub struct ExecutedTemplate {
     pub has_parallel_sub_cmp: bool,
     pub is_custom_gate: bool,
     pub underscored_signals: Vec<String>,
+    pub preconditions: LinkedList<Expression>,
+    pub postconditions_intermediates: LinkedList<Expression>,
+    pub postconditions_outputs: LinkedList<Expression>,
+
+    pub defined_preconditions: LinkedList<Expression>,
+    pub defined_postconditions: LinkedList<Expression>,
+    pub defined_facts: LinkedList<Expression>,
+
     connexions: Vec<Connexion>,
 }
 
@@ -87,6 +100,7 @@ impl ExecutedTemplate {
         public: Vec<String>,
         name: String,
         report_name: String,
+        pretty_name: String,
         instance: ParameterContext,
         tag_instances: TagContext,
         code: Statement,
@@ -96,6 +110,7 @@ impl ExecutedTemplate {
         let public_inputs: HashSet<_> = public.iter().cloned().collect();
         ExecutedTemplate {
             report_name,
+            pretty_name,
             public_inputs,
             is_parallel,
             has_parallel_sub_cmp: false,
@@ -114,6 +129,13 @@ impl ExecutedTemplate {
             number_of_components: 0,
             connexions: Vec::new(),
             underscored_signals: Vec::new(),
+            preconditions: LinkedList::new(),
+            postconditions_intermediates: LinkedList::new(),
+            postconditions_outputs: LinkedList::new(),
+
+            defined_preconditions: LinkedList::new(),
+            defined_postconditions: LinkedList::new(),
+            defined_facts: LinkedList::new(),
         }
     }
 
@@ -186,6 +208,14 @@ impl ExecutedTemplate {
         self.underscored_signals.push(signal.to_string());
     }
 
+    pub fn add_specification(&mut self, expression: Expression, type_spec: &TypeSpecification){
+        match type_spec{
+            TypeSpecification::Precondition => self.defined_preconditions.push_back(expression),
+            TypeSpecification::Postcondition => self.defined_postconditions.push_back(expression),
+            TypeSpecification::Fact => self.defined_facts.push_back(expression),
+        } 
+    }
+
     pub fn template_name(&self) -> &String {
         &self.template_name
     }
@@ -210,7 +240,7 @@ impl ExecutedTemplate {
         &self.intermediates
     }
 
-    pub fn insert_in_dag(&mut self, dag: &mut DAG) {
+    pub fn insert_in_dag(&mut self, dag: &mut DAG, tag_specifications: &SpecificationInfo) {
         let parameters = {
             let mut parameters = vec![];
             for (_, data) in self.parameter_instances.clone() {
@@ -224,41 +254,53 @@ impl ExecutedTemplate {
 
         dag.add_node(
             self.report_name.clone(),
+            self.pretty_name.clone(),
             parameters,
             self.ordered_signals.clone(), // pensar si calcularlo en este momento para no hacer clone
             self.is_parallel,
             self.is_custom_gate
         );
-        self.build_signals(dag);
+        self.build_signals(dag, tag_specifications);
         self.build_connexions(dag);
         self.build_constraints(dag);
+        self.build_specifications(dag);
     }
 
-    fn build_signals(&self, dag: &mut DAG) {
+    fn build_signals(&mut self, dag: &mut DAG, tag_specifications: &SpecificationInfo) {
+        let mut preconditions = LinkedList::new();
+        let mut postconditions_intermediates = LinkedList::new();
+        let mut postconditions_outputs = LinkedList::new();
         for (name, dim) in self.outputs() {
             let state = State { name: name.clone(), dim: 0 };
             let config = SignalConfig { signal_type: 1, dimensions: dim, is_public: false };
-            generate_symbols(dag, state, &config);
+            let specs = self.generate_specifications(&name, tag_specifications);
+            postconditions_outputs.append(&mut generate_symbols(dag, state, &config, &specs));
         }
         for (name, dim) in self.inputs() {
             if self.public_inputs.contains(name) {
                 let state = State { name: name.clone(), dim: 0 };
                 let config = SignalConfig { signal_type: 0, dimensions: dim, is_public: true };
-                generate_symbols(dag, state, &config);
+                let specs = self.generate_specifications(&name, tag_specifications);
+                preconditions.append(&mut generate_symbols(dag, state, &config, &specs));
             }
         }
         for (name, dim) in self.inputs() {
             if !self.public_inputs.contains(name) {
                 let state = State { name: name.clone(), dim: 0 };
                 let config = SignalConfig { signal_type: 0, dimensions: dim, is_public: false };
-                generate_symbols(dag, state, &config);
+                let specs = self.generate_specifications(&name, tag_specifications);
+                preconditions.append(&mut generate_symbols(dag, state, &config, &specs));
             }
         }
         for (name, dim) in self.intermediates() {
             let state = State { name: name.clone(), dim: 0 };
             let config = SignalConfig { signal_type: 2, dimensions: dim, is_public: false };
-            generate_symbols(dag, state, &config);
+            let specs = self.generate_specifications(&name, tag_specifications);
+            postconditions_intermediates.append(&mut generate_symbols(dag, state, &config, &specs));
         }
+        self.preconditions = preconditions;
+        self.postconditions_intermediates = postconditions_intermediates;
+        self.postconditions_outputs = postconditions_outputs;
     }
     fn build_connexions(&mut self, dag: &mut DAG) {
         self.connexions.sort_by(|l, r| {
@@ -298,6 +340,53 @@ impl ExecutedTemplate {
         }
     }
 
+    fn build_specifications(&self, dag: &mut DAG) {
+        for c in &self.preconditions {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_tag_precondition(cc);
+        }
+        for c in &self.postconditions_intermediates {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_tag_postcondition_intermediate(cc);
+        }
+        for c in &self.postconditions_outputs {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_tag_postcondition_output(cc);
+        }
+
+        for c in &self.defined_preconditions{
+            let main_node = dag.get_main().unwrap();
+            let correspondence = main_node.correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            if cc.check_condition_io_signals(main_node.number_of_inputs() + main_node.number_of_outputs()){
+                dag.add_precondition(cc); // only involves io signals
+            } else{
+                dag.add_precondition_intermediate(cc); // involves intermediates
+            }
+        }
+
+        for c in &self.defined_postconditions{
+            let main_node = dag.get_main().unwrap();
+            let correspondence = main_node.correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            if cc.check_condition_io_signals(main_node.number_of_inputs() + main_node.number_of_outputs()){
+                dag.add_postcondition_output(cc); // only involves io signals
+            } else{
+                dag.add_postcondition_intermediate(cc); // involves intermediates
+            }
+        }
+
+        for c in &self.defined_facts{
+            let main_node = dag.get_main().unwrap();
+            let correspondence = main_node.correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_fact(cc);
+        }
+    }
+    
     pub fn export_to_circuit(self, instances: &mut [TemplateInstance]) -> TemplateInstance {
         use SignalType::*;
         fn build_triggers(
@@ -403,7 +492,32 @@ impl ExecutedTemplate {
 
         instance
     }
+
+    fn generate_specifications(
+        &self, name: &String, 
+        tag_specifications: &SpecificationInfo
+    )-> Vec<Expression>{
+        use crate::execute::execute_tag_expression;
+        let mut specs_signal = Vec::new();
+        let tags_signal = self.signal_to_tags.get(name);
+        if tags_signal.is_some(){
+            for (tag, value) in tags_signal.unwrap(){
+                match tag_specifications.get(tag){
+                    None =>{},
+                    Some(spec) =>{
+                        let expr =  spec.get_condition();
+                        specs_signal.push(execute_tag_expression(expr, spec.get_signal(), value));
+                    }
+                }
+            }
+        }
+        specs_signal        
+    }
+    
 }
+
+
+
 
 struct SignalConfig<'a> {
     is_public: bool,
@@ -414,8 +528,17 @@ struct State {
     name: String,
     dim: usize,
 }
-fn generate_symbols(dag: &mut DAG, state: State, config: &SignalConfig) {
+fn generate_symbols(
+    dag: &mut DAG, 
+    state: State, 
+    config: &SignalConfig, 
+    specifications: &Vec<Expression>
+)-> LinkedList<Expression>{
+    let mut updated_specs = LinkedList::new();
     if state.dim == config.dimensions.len() {
+        for spec in specifications{
+            updated_specs.push_back(update_expression_instantation(spec, &state.name));
+        }
         if config.signal_type == 0 {
             dag.add_input(state.name, config.is_public);
         } else if config.signal_type == 1 {
@@ -428,10 +551,11 @@ fn generate_symbols(dag: &mut DAG, state: State, config: &SignalConfig) {
         while index < config.dimensions[state.dim] {
             let new_state =
                 State { name: format!("{}[{}]", state.name, index), dim: state.dim + 1 };
-            generate_symbols(dag, new_state, config);
+            updated_specs.append(&mut generate_symbols(dag, new_state, config, specifications));
             index += 1;
         }
     }
+    updated_specs
 }
 
 fn as_big_int(exprs: Vec<ArithmeticExpression<String>>) -> Vec<BigInt> {
@@ -574,4 +698,37 @@ pub fn templates_in_mixed_arrays(exec_tmp: &ExecutedTemplate, no_templates: usiz
         mixed[data.goes_to] = mixed[data.goes_to] || matches!(pos_value, T);
     }
     mixed
+}
+
+
+
+// Methods to execute the expressions of the specifications
+
+
+
+
+
+fn update_expression_instantation(
+    expression: &Expression,
+    new_signal_name: &String,
+) -> Expression{
+    match expression{
+        Number(_,_) => {
+            expression.clone()
+        }
+        Variable { meta, access, .. } => {
+            Expression:: Variable{meta: meta.clone(), name: new_signal_name.clone(), access: access.clone()}
+        }
+        InfixOp { meta, lhe, infix_op, rhe, .. } => {
+            let l_value = update_expression_instantation(lhe, new_signal_name);
+            let r_value = update_expression_instantation(rhe, new_signal_name);
+            Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        }
+        PrefixOp {meta,  prefix_op, rhe, .. } => {
+            let value = update_expression_instantation(rhe, new_signal_name);
+            Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        }
+
+        _ => {unreachable!("The rest of the expressions are not valid."); }
+    }
 }

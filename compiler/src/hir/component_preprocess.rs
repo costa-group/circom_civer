@@ -20,8 +20,18 @@ fn rm_statement(stmt: &mut Statement) {
         rm_substitution(stmt);
     } else if stmt.is_underscore_substitution(){ 
         rm_underscore_substitution(stmt);
+    } else if stmt.is_specification_condition(){ 
+        rm_specification_condition(stmt);
     }
 }
+
+fn rm_specification_condition(stmt: &mut Statement){
+    use Statement::{Block, SpecificationCondition};
+    if let SpecificationCondition { meta, .. } = stmt{
+        *stmt = Block{ meta: meta.clone(), stmts: Vec::new() };
+    }
+}
+
 
 fn rm_underscore_substitution(stmt: &mut Statement){
     use Statement::{Block, UnderscoreSubstitution};

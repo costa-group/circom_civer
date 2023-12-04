@@ -1,3 +1,6 @@
+use crate::analyzers::symbol_analysis::specification_symbol_analysis;
+use crate::analyzers::type_check::specification_type_check;
+
 use super::analyzers::*;
 use super::decorators::*;
 use program_structure::error_definition::ReportCollection;
@@ -25,6 +28,11 @@ pub fn check_types(
         return Result::Err(errors);
     }
 
+    specification_level_analyses(program_archive, &mut errors);
+    if !errors.is_empty(){
+        return Result::Err(errors);
+    }
+    
     // Decorators
     template_level_decorators(program_archive, &mut errors);
     if !errors.is_empty() {
@@ -137,6 +145,22 @@ fn semantic_analyses(
             match custom_gate_analysis(template_name, body) {
                 Result::Ok(mut custom_gate_report) => warnings.append(&mut custom_gate_report),
                 Result::Err(mut custom_gate_report) => errors.append(&mut custom_gate_report)
+            }
+        }
+    }
+}
+
+fn specification_level_analyses(program_archive: &ProgramArchive, reports: &mut ReportCollection) {
+    let specification_names = program_archive.get_specification_names();
+    for specification_name in specification_names {
+        let result_0 = specification_symbol_analysis(specification_name, program_archive);
+        if let Result::Err(mut symbol_analysis_in_specification_data) = result_0 {
+            reports.append(&mut symbol_analysis_in_specification_data);
+        }
+        else {
+            let result_0 = specification_type_check(specification_name, program_archive);
+            if let Result::Err(mut specification_type) = result_0 {
+                reports.append(&mut specification_type);
             }
         }
     }

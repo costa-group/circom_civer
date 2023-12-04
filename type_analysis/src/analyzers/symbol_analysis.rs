@@ -266,6 +266,9 @@ fn analyze_statement(
                 );
             }
         }
+        Statement::SpecificationCondition { cond, .. } => 
+            analyze_expression(cond, file_id, function_info, template_info, reports, environment)
+,
     }
 }
 
@@ -291,7 +294,7 @@ fn treat_variable(
     for acc in access.iter() {
         if let Access::ArrayAccess(index) = acc {
             analyze_expression(index, file_id, function_info, template_info, reports, environment);
-        }
+        } 
     }
 }
 
@@ -415,5 +418,26 @@ fn analyze_expression(
             );
         },
         _ => {}
+    }
+}
+
+
+pub fn specification_symbol_analysis(
+    specification_name: &str,
+    program_archive: &ProgramArchive,
+) -> Result<(), ReportCollection> {
+    let specification_data = program_archive.get_specification_data(specification_name); 
+    let file_id = specification_data.get_file_id();
+    let mut environment = Environment::new();
+    environment.push(Block::new());
+    add_symbol_to_block(&mut environment, specification_data.get_signal());
+    add_symbol_to_block(&mut environment, specification_data.get_tag());
+    let mut reports = Vec::new();
+    let exp =  specification_data.get_condition();
+    analyze_expression(&exp, file_id, program_archive.get_functions(), program_archive.get_templates(), &mut reports, &environment);
+    if reports.is_empty() {
+        Result::Ok(())
+    } else {
+        Result::Err(reports)
     }
 }

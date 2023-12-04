@@ -80,10 +80,25 @@ pub fn build_assert(meta: Meta, arg: Expression) -> Statement {
     Assert { meta, arg }
 }
 
+pub fn build_specification_condition(meta : Meta, is_precondition : TypeSpecification, cond : Expression) -> Statement {
+    SpecificationCondition { meta, is_precondition, cond }
+}
 pub fn build_mult_substitution(meta: Meta, lhe: Expression, op : AssignOp, rhe: Expression) -> Statement {
     MultSubstitution { meta: meta.clone(), lhe, op, rhe }
 }
 
 pub fn build_anonymous_component_statement(meta: Meta, arg: Expression) -> Statement {
     MultSubstitution { meta: meta.clone(), lhe: crate::expression_builders::build_tuple(meta, Vec::new()), op: AssignOp::AssignConstraintSignal, rhe: arg }
+}
+
+pub fn build_precondition(meta: Meta, exp: Expression) -> Statement {
+    SpecificationCondition { meta, is_precondition: TypeSpecification::Precondition, cond: exp }
+}
+
+pub fn build_postcondition(meta: Meta, exp: Expression) -> Statement {
+    SpecificationCondition { meta, is_precondition: TypeSpecification::Postcondition, cond: exp }
+}
+
+pub fn build_fact(meta: Meta, exp: Expression) -> Statement {
+    SpecificationCondition { meta, is_precondition: TypeSpecification::Fact, cond: exp }
 }

@@ -42,7 +42,14 @@ fn start() -> Result<(), ()> {
         sym: user_input.sym_file().to_string(),
         r1cs: user_input.r1cs_file().to_string(),
         json_constraints: user_input.json_constraints_file().to_string(),
-        prime: user_input.prime(),        
+        prime: user_input.prime(),
+        civer: user_input.civer(),
+        verification_timeout: user_input.verification_timeout(),
+        check_tags: user_input.check_tags(),
+        check_postconditions: user_input.check_postconditions(),
+        check_safety: user_input.check_safety(),
+        add_tags_info: user_input.add_tags_info(),
+        add_postconditions_info: user_input.add_postconditions_info(),
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {

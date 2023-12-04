@@ -293,6 +293,8 @@ fn expand_statement(stmt: &mut Statement, environment: &mut ExpressionHolder) {
         Block { stmts, .. } => expand_block(stmts, environment),
         MultSubstitution { .. } => unreachable!(),
         UnderscoreSubstitution { rhe, .. } => expand_underscore_substitution(rhe, environment),
+        SpecificationCondition { cond, .. } => 
+            expand_specification_condition(cond, environment),
     }
 }
 
@@ -361,6 +363,13 @@ fn expand_substitution(
             *e = expand_expression(e.clone(), environment);
         }
     }
+}
+
+fn expand_specification_condition(
+    rhe: &mut Expression,
+    environment: &ExpressionHolder,
+) {
+    *rhe = expand_expression(rhe.clone(), environment);
 }
 
 fn expand_underscore_substitution(

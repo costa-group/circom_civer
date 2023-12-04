@@ -17,4 +17,6 @@ pub struct SubComponentData {
     pub is_parallel: bool,
     pub indexed_with: Vec<usize>,
     pub goes_to: NodePointer,
+    pub preconditions: TagContext,
+    pub postconditions: TagContext,
 }

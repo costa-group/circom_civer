@@ -1,4 +1,6 @@
 use crate::expression_builders::build_anonymous_component;
+use std::collections::HashMap;
+
 
 use super::ast::*;
 
@@ -137,6 +139,44 @@ impl Expression {
         } 
     } 
 
+    pub fn contains_implication_expression(&self) -> bool {
+        match &self {
+            Expression::InfixOp { lhe, infix_op, rhe, .. } => 
+                return infix_op.eq(&ExpressionInfixOpcode::BoolImplication) || lhe.contains_implication_expression() || rhe.contains_implication_expression(),
+            Expression::PrefixOp {  rhe, .. } => return rhe.contains_implication_expression(),
+            Expression::InlineSwitchOp { cond, if_true, if_false, .. } => 
+                return cond.contains_implication_expression() || if_true.contains_implication_expression() || if_false.contains_implication_expression(),
+            Expression::ParallelOp {  rhe, .. } => 
+                return rhe.contains_implication_expression(),
+            Expression::Variable { access , ..} => {
+                for ac in access{
+                    match ac {
+                        Access::ComponentAccess(_) => {},
+                        Access::ArrayAccess( exp ) => if exp.contains_implication_expression() {return true;},
+                    }
+                }
+            },
+            Expression::Number(_, _) => return false,
+            Expression::Call { args, .. }  | Expression::ArrayInLine { values: args, .. } 
+            | Expression::Tuple {  values: args, .. }=> {
+                for arg in args{
+                    if arg.contains_implication_expression() {  return true;}
+                }
+            },
+            Expression::AnonymousComp { params, signals, .. } => {
+                for arg in params{
+                    if arg.contains_implication_expression() {  return true;}
+                }
+                for arg in signals{
+                    if arg.contains_implication_expression() {  return true;}
+                }
+            },
+            Expression::UniformArray { value, dimension, .. } => 
+                return value.contains_implication_expression() || dimension.contains_implication_expression(),
+        }
+        false
+    }
+    
     pub fn contains_anonymous_comp(&self) -> bool {
         use Expression::*;
         match &self {
@@ -211,6 +251,98 @@ impl Expression {
             ParallelOp { rhe, .. } => {rhe.contains_tuple()},
          }
     }
+
+  
+
+    pub fn apply_correspondence(&self, correspondence: &HashMap<String, usize>) -> Expression{
+        use Expression::*;
+        match self{
+            Number(_,_) => {
+                self.clone()
+            }
+            Variable { meta, name, access } => {
+                match correspondence.get(name){
+                    Some(pos) => Expression:: Variable{meta: meta.clone(), name: format!("{}", pos), access: access.clone()},
+                    None => unreachable!(),
+    
+                }
+            }
+            InfixOp { meta, lhe, infix_op, rhe, .. } => {
+                let l_value = lhe.apply_correspondence(correspondence);
+                let r_value = rhe.apply_correspondence(correspondence);
+                Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        
+            }
+            PrefixOp {meta,  prefix_op, rhe, .. } => {
+                let value = rhe.apply_correspondence(correspondence);
+                Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        
+            }
+            
+            _ => {unreachable!("The rest of the expressions are not valid."); }
+        }
+    }
+
+    pub fn check_condition_io_signals(&self, max_io_value: usize) -> bool{
+        use Expression::*;
+        match self{
+            Number(_,_) => {
+                true
+            }
+            Variable { name, ..  } => {
+                let value_pos = name.parse::<usize>();
+                match value_pos{
+                    Ok(v) => v <= max_io_value,
+                    Err(_) => unreachable!("Should be a usize, not a string"),
+                }   
+            }
+            InfixOp { lhe, rhe, .. } => {
+                lhe.check_condition_io_signals(max_io_value) && rhe.check_condition_io_signals(max_io_value)
+
+
+            }
+            PrefixOp {rhe, .. } => {
+                rhe.check_condition_io_signals(max_io_value)
+
+            }
+
+            _ => {unreachable!("The rest of the expressions are not valid."); }
+        }
+    }
+
+
+
+    pub fn apply_offset(&self, offset: usize) -> Expression{
+        use Expression::*;
+        match self{
+            Number(_,_) => {
+                self.clone()
+            }
+            Variable { meta, name, access } => {
+                let value_pos = name.parse::<usize>();
+                match value_pos{
+                    Ok(v) => Expression:: Variable{meta: meta.clone(), name: format!("{}", v + offset), access: access.clone()},
+                    Err(_) => unreachable!("Should be a usize, not a string"),
+                }    
+                
+            }
+            InfixOp { meta, lhe, infix_op, rhe, .. } => {
+                let l_value = lhe.apply_offset(offset);
+                let r_value = rhe.apply_offset(offset);
+                Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        
+            }
+            PrefixOp {meta,  prefix_op, rhe, .. } => {
+                let value = rhe.apply_offset(offset);
+                Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        
+            }
+            
+            _ => {unreachable!("The rest of the expressions are not valid."); }
+        }
+    }
+
+
 }
 
 impl FillMeta for Expression {

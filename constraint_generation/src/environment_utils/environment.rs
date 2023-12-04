@@ -6,14 +6,15 @@ use super::slice_types::{
     SliceCapacity,
     TagInfo, 
     TagDefinitions,
-    TagState
+    TagState,
+    ExpressionSlice
 };
 use super::{ArithmeticExpression, CircomEnvironment, CircomEnvironmentError};
 use program_structure::memory_slice::MemoryError;
 use crate::ast::Meta;
 
 pub type ExecutionEnvironmentError = CircomEnvironmentError;
-pub type ExecutionEnvironment = CircomEnvironment<ComponentSlice, (TagInfo, TagDefinitions, SignalSlice), (TagInfo, AExpressionSlice)>;
+pub type ExecutionEnvironment = CircomEnvironment<ComponentSlice, (TagInfo, TagDefinitions, SignalSlice), (TagInfo, AExpressionSlice, ExpressionSlice)>;
 
 pub fn environment_shortcut_add_component(
     environment: &mut ExecutionEnvironment,
@@ -68,8 +69,11 @@ pub fn environment_shortcut_add_variable(
     variable_name: &str,
     dimensions: &[SliceCapacity],
 ) {
+use program_structure::ast::Expression;
+    use num_bigint_dig::BigInt;
     let slice = AExpressionSlice::new_with_route(dimensions, &ArithmeticExpression::default());
-    environment.add_variable(variable_name, (TagInfo::new(), slice));
+    let slice_spec = ExpressionSlice::new_with_route(dimensions, &Some(Expression::Number(Meta::new(0,0), BigInt::from(0))));
+    environment.add_variable(variable_name, (TagInfo::new(), slice, slice_spec));
 }
 
 pub fn environment_check_all_components_assigned(environment: &ExecutionEnvironment)-> Result<(), (MemoryError, Meta)>{

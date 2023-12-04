@@ -60,6 +60,7 @@ pub fn run_parser(
     file: String,
     version: &str,
     link_libraries: Vec<PathBuf>,
+    spec_libraries: Vec<String>,
 ) -> Result<(ProgramArchive, ReportCollection), (FileLibrary, ReportCollection)> {
     let mut file_library = FileLibrary::new();
     let mut definitions = Vec::new();
@@ -70,6 +71,12 @@ pub fn run_parser(
     let mut link_libraries2 = link_libraries.clone();
     let mut ext_link_libraries = vec![Path::new("").to_path_buf()];
     ext_link_libraries.append(&mut link_libraries2);
+    for include in spec_libraries {
+        let path_include =
+            FileStack::add_include(&mut file_stack, include.clone(), &link_libraries.clone())
+                .map_err(|e| (file_library.clone(), vec![e]))?;
+        includes_graph.add_edge(path_include).map_err(|e| (file_library.clone(), vec![e]))?;
+    }
     while let Some(crr_file) = FileStack::take_next(&mut file_stack) {
         let (found, path, src, crr_str_file, reports) =
             find_file(crr_file, ext_link_libraries.clone());

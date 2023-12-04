@@ -106,6 +106,9 @@ pub enum ReportCode {
     TupleError,
     InvalidSignalTagAccess,
     UninitializedComponent,
+
+    ImplicationError,
+    CIVERError
 }
 
 impl fmt::Display for ReportCode {
@@ -213,6 +216,8 @@ impl fmt::Display for ReportCode {
             AnonymousCompError => "TAC01",
             TupleError => "TAC02",
             UnderscoreWithNoSignalWarning => "TAC03",
+            ImplicationError => "TAC04",
+            CIVERError => "CIV01"
         };
         f.write_str(string_format)
     }
