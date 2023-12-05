@@ -38,12 +38,12 @@ pub enum PossibleResult{
     fn finished_verification(&self) -> bool{
         self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
     }
-    fn print_result(&self){
+    fn result_to_str(&self)-> String{
         match self{
-            &PossibleResult::FAILED => {print!("FAILED -> FOUND COUNTEREXAMPLE\n");}
-            &PossibleResult::UNKNOWN => {print!("UNKNOWN -> VERIFICATION TIMEOUT\n");}
-            &PossibleResult::NOTHING => {print!("NOTHING TO VERIFY\n");}
-            _ => {print!("VERIFIED\n");}
+            &PossibleResult::FAILED => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
+            &PossibleResult::UNKNOWN => {format!("UNKNOWN -> VERIFICATION TIMEOUT\n")}
+            &PossibleResult::NOTHING => {format!("NOTHING TO VERIFY\n")}
+            _ => {format!("VERIFIED\n")}
         }
     }
 }
@@ -120,14 +120,16 @@ impl TreeConstraints {
     }
 
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
-        add_tags_info: bool, add_postconditions_info: bool
-    ) -> (PossibleResult, PossibleResult, PossibleResult){
+        add_tags_info: bool, add_postconditions_info: bool,
+    ) -> (PossibleResult, PossibleResult, PossibleResult, Vec<String>){
         let mut implications: Vec<ExecutedImplication> = Vec::new();
         let mut tags_implications: Vec<ExecutedImplication> = Vec::new();
 
         let mut implications_safety: Vec<SafetyImplication> = Vec::new();
 
         let mut signals: LinkedList<usize> = LinkedList::new(); 
+
+        let mut logs =  Vec::new();
         
         for s in 0..self.number_signals{
             signals.push_back(s+self.initial_signal);
@@ -172,39 +174,39 @@ impl TreeConstraints {
             add_tags_info,
             add_postconditions_info,
         );
-        println!("Checking template {}", self.pretty_template_name);
-        println!("Number of signals (i,int,o): {}", self.number_signals);
+        logs.push(format!("Checking template {}\n", self.pretty_template_name));
+        logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));
         if check_tags{
-            println!("Number of tagged signals to check: {}", self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len());
+            logs.push(format!("Number of tagged signals to check: {}\n", self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len()));
         }
         if check_postconditions{
-            println!("Number of postconditions to check: {}", self.postconditions_intermediates.len() + self.postconditions_outputs.len());
+            logs.push(format!("Number of postconditions to check: {}\n", self.postconditions_intermediates.len() + self.postconditions_outputs.len()));
         }        
-        println!("Number of constraints in template: {}", self.constraints().len());
+        logs.push(format!("Number of constraints in template: {}\n", self.constraints().len()));
         let inicio = Instant::now();
 
-        let (mut result_tags, mut result_postconditions, mut result_safety) = verification.deduce();
+        let (mut result_tags, mut result_postconditions, mut result_safety, mut logs_round) = verification.deduce();
         let mut finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
-
+        logs.append(&mut logs_round);
         if finished_verification{
             let duration = inicio.elapsed();    
-            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
-            println!("     NUMBER OF ROUNDS: 0\n ");
-            println!("---> VERIFICATION_RESULTS:");
+            logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
+            logs.push(format!("     NUMBER OF ROUNDS: 0\n\n"));
+            logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
-                print!("-----> TAGS CHECKING: ");
-                result_tags.print_result();
+                logs.push(format!("-----> TAGS CHECKING: "));
+                logs.push(result_tags.result_to_str());
             }
             if check_postconditions{
-                print!("-----> POSTCONDITIONS CHECKING: ");
-                result_postconditions.print_result();
+                logs.push(format!("-----> POSTCONDITIONS CHECKING: "));
+                logs.push(result_postconditions.result_to_str());
             }
             if check_safety{
-                print!("-----> WEAK SAFETY: ");
-                result_safety.print_result();
+                logs.push(format!("-----> WEAK SAFETY: "));
+                logs.push(result_safety.result_to_str());
             }
-            println!("\n\n");
-            (result_tags, result_postconditions, result_safety)
+            logs.push(format!("\n\n"));
+            (result_tags, result_postconditions, result_safety, logs)
         } else if !self.subcomponents.is_empty(){
             let mut to_check_next = Vec::new();
             let mut n_rounds = 1;
@@ -227,9 +229,10 @@ impl TreeConstraints {
                 verification.check_safety = false;
             }
 
-            println!("### Trying to verify adding constraints of the children");
-            (result_tags, result_postconditions, result_safety) = verification.deduce();
+            logs.push(format!("### Trying to verify adding constraints of the children\n"));
+            (result_tags, result_postconditions, result_safety, logs_round) = verification.deduce();
             finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+            logs.append(&mut logs_round);
             while !finished_verification && !to_check_next.is_empty(){
                 let new_components = std::mem::take(&mut to_check_next);
                 n_rounds = n_rounds + 1;
@@ -253,47 +256,48 @@ impl TreeConstraints {
                     verification.check_safety = false;
                 }
 
-                println!("### Trying to verify adding constraints of the children");
-                (result_tags, result_postconditions, result_safety) = verification.deduce();
+                logs.push(format!("### Trying to verify adding constraints of the children\n"));
+                (result_tags, result_postconditions, result_safety, logs_round) = verification.deduce();
                 finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+                logs.append(&mut logs_round);
             }
             let duration = inicio.elapsed();    
-            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
-            println!("     NUMBER OF ROUNDS: {}\n ", n_rounds);
-            println!("---> VERIFICATION_RESULTS:");
+            logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
+            logs.push(format!("     NUMBER OF ROUNDS: {}\n\n ", n_rounds));
+            logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
-                print!("-----> TAGS CHECKING: ");
-               result_tags.print_result();
+                logs.push(format!("-----> TAGS CHECKING: "));
+                logs.push(result_tags.result_to_str());
             }
             if check_postconditions{
-                print!("-----> POSTCONDITIONS CHECKING: ");
-                result_postconditions.print_result();
+                logs.push(format!("-----> POSTCONDITIONS CHECKING: "));
+                logs.push(result_postconditions.result_to_str());
             }
             if check_safety{
-                print!("-----> WEAK SAFETY: ");
-                result_safety.print_result();
+                logs.push(format!("-----> WEAK SAFETY: "));
+                logs.push(result_safety.result_to_str());
             }
-            println!("\n\n");
-            (result_tags, result_postconditions, result_safety)
+            logs.push(format!("\n\n"));
+            (result_tags, result_postconditions, result_safety, logs)
         } else{
             let duration = inicio.elapsed();  
-            println!("Verification time per template: {}s \n", duration.as_secs_f64());    
-            println!("     NUMBER OF ROUNDS: 0\n ");
-            println!("---> VERIFICATION_RESULTS:");
+            logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
+            logs.push(format!("     NUMBER OF ROUNDS: 0  \n\n"));
+            logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
-                print!("-----> TAGS CHECKING: ");
-                result_tags.print_result();
+                logs.push(format!("-----> TAGS CHECKING: "));
+                logs.push(result_tags.result_to_str());
             }
             if check_postconditions{
-                print!("-----> POSTCONDITIONS CHECKING: ");
-                result_postconditions.print_result();
+                logs.push(format!("-----> POSTCONDITIONS CHECKING: "));
+                logs.push(result_postconditions.result_to_str());
             }
             if check_safety{
-                print!("-----> WEAK SAFETY: ");
-                result_safety.print_result();
+                logs.push(format!("-----> WEAK SAFETY: "));
+                logs.push(result_safety.result_to_str());
             }
-            println!("\n\n");
-            (result_tags, result_postconditions, result_safety)
+            logs.push(format!("\n\n"));
+            (result_tags, result_postconditions, result_safety, logs)
         }
     }
 

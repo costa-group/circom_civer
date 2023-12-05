@@ -176,36 +176,39 @@ impl TemplateVerification{
     }
 
 
-    pub fn deduce(&mut self)-> (PossibleResult, PossibleResult, PossibleResult) {        //self.print_pretty_template_verification();
+    pub fn deduce(&mut self)-> (PossibleResult, PossibleResult, PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
+        
         self.deduce_round();
+
+        let mut logs = Vec::new();
 
         let result_tags = if self.check_tags{
             if self.tags_postconditions_intermediates.is_empty() && self.tags_postconditions.is_empty(){
-                println!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN TAGGED OUTPUTS");
+                logs.push(format!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN TAGGED OUTPUTS\n"));
                 PossibleResult::NOTHING
             } else{
-                self.try_prove_tags()
+                self.try_prove_tags(&mut logs)
             }
         } else{
             PossibleResult::NOSTUDIED
         };
         let result_post = if self.check_postconditions{
             if self.postconditions_intermediates.is_empty() && self.postconditions.is_empty(){
-                println!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN POSTCONDITIONS");
+                logs.push(format!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN POSTCONDITIONS\n"));
                 PossibleResult::NOTHING
             } else{
-                self.try_prove_postconditions()
+                self.try_prove_postconditions(&mut logs)
             }
         } else{
             PossibleResult::NOSTUDIED
         };
         let result_safety = if self.check_safety{
-            self.try_prove_safety()
+            self.try_prove_safety(&mut logs)
         } else{
             PossibleResult::NOSTUDIED
         };
 
-        (result_tags, result_post, result_safety)
+        (result_tags, result_post, result_safety, logs)
     }
 
     // returns the signals where it was able to find new bounds
@@ -239,7 +242,7 @@ impl TemplateVerification{
     }
 
 
-    pub fn try_prove_tags(&self)-> PossibleResult{
+    pub fn try_prove_tags(&self, logs: &mut Vec<String>)-> PossibleResult{
         let mut cfg = Config::new();
         cfg.set_timeout_msec(self.verification_timeout);
         let ctx = Context::new(&cfg);
@@ -283,9 +286,6 @@ impl TemplateVerification{
         }
         for precondition in &self.facts{
             value_preconditions &= get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep).unwrap();
-        }
-        if self.verbose{
-            println!("Preconditions: {}", value_preconditions.to_string());
         }
 
         solver.assert(&value_preconditions);
@@ -316,37 +316,34 @@ impl TemplateVerification{
         for postcondition in &self.tags_postconditions_intermediates{
             value_postconditions &= get_z3_expression_bool(&ctx, &postcondition, &aux_signals_to_smt_rep).unwrap();
         }
-        if self.verbose{
-            println!("Postconditions: {}", value_postconditions.to_string());
-        }
 
         solver.assert(&!value_postconditions);
 
         match solver.check(){
             SatResult::Sat =>{
-                println!("### THE VERIFICATION OF THE TAGS OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT:");
+                logs.push(format!("### THE VERIFICATION OF THE TAGS OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT:\n"));
                 //if self.verbose{
 
                  let model = solver.get_model().unwrap();
                  for s in &self.signals{
                      let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
-                     println!("Signal {}: {}", s, v.to_string());
+                     logs.push(format!("Signal {}: {}\n", s, v.to_string()));
                  }
                 //}
                 PossibleResult::FAILED
             },
             SatResult::Unsat =>{
-                println!("### SUCCESS: THE TAGS OF THE TEMPLATE ARE VERIFIED");
+                logs.push(format!("### SUCCESS: THE TAGS OF THE TEMPLATE ARE VERIFIED\n"));
                 PossibleResult::VERIFIED
             },
             _=> {
-                println!("### UNKNOWN: VERIFICATION OF THE TAGS TIMEOUT");
+                logs.push(format!("### UNKNOWN: VERIFICATION OF THE TAGS TIMEOUT\n"));
                 PossibleResult::UNKNOWN
             }
         }
     }
 
-    pub fn try_prove_postconditions(&self)-> PossibleResult{
+    pub fn try_prove_postconditions(&self, logs: &mut Vec<String>)-> PossibleResult{
         let mut cfg = Config::new();
         cfg.set_timeout_msec(self.verification_timeout);
         let ctx = Context::new(&cfg);
@@ -372,9 +369,6 @@ impl TemplateVerification{
                         &self.field
                     );
 
-                    if self.verbose{
-                        println!("Signal bounds: {}", condition.to_string());  
-                    }
                     solver.assert(&condition);
                 }
             }
@@ -403,10 +397,6 @@ impl TemplateVerification{
             value_preconditions &= get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep).unwrap();
         }
 
-        if self.verbose{
-            println!("Preconditions: {}", value_preconditions.to_string());
-        }
-
         solver.assert(&value_preconditions);
 
 
@@ -432,42 +422,36 @@ impl TemplateVerification{
         for postcondition in &self.postconditions_intermediates{
             value_postconditions &= get_z3_expression_bool(&ctx, &postcondition, &aux_signals_to_smt_rep).unwrap();
         }
-        //if self.verbose{
-        //    println!("Postconditions: {}", value_postconditions.to_string());
-        //}
+
 
         solver.assert(&!value_postconditions);
 
-        //if self.print_smt{
-        //    println!("{:?}", solver);
-        //}
-
         match solver.check(){
             SatResult::Sat =>{
-                println!("### THE VERIFICATION OF THE SPECIFICATION OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT:");
+                logs.push(format!("### THE VERIFICATION OF THE SPECIFICATION OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT:\n"));
                 //if self.verbose{
 
                  let model = solver.get_model().unwrap();
                  for s in &self.signals{
                      let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
-                     println!("Signal {}: {}", s, v.to_string());
+                     logs.push(format!("Signal {}: {}\n", s, v.to_string()));
                  }
                 //}
                 PossibleResult::FAILED
             },
             SatResult::Unsat =>{
-                println!("### SUCCESS: THE SPECIFICATION OF THE TEMPLATE IS VERIFIED");
+                logs.push(format!("### SUCCESS: THE SPECIFICATION OF THE TEMPLATE IS VERIFIED\n"));
                 PossibleResult::VERIFIED
             },
             _=> {
-                println!("### UNKNOWN: VERIFICATION OF THE TEMPLATE SPECIFICATION TIMEOUT");
+                logs.push(format!("### UNKNOWN: VERIFICATION OF THE TEMPLATE SPECIFICATION TIMEOUT\n"));
                 PossibleResult::UNKNOWN
             }
         }
     }
 
 
-    pub fn try_prove_safety(&self) -> PossibleResult{
+    pub fn try_prove_safety(&self, logs: &mut Vec<String>) -> PossibleResult{
         let mut cfg = Config::new();
         cfg.set_timeout_msec(self.verification_timeout);
         let ctx = Context::new(&cfg);
@@ -618,26 +602,22 @@ impl TemplateVerification{
 
         solver.assert(&!all_outputs_equal);
         
-        //if self.print_smt{
-        //    println!("{:?}", solver);
-        //}
 
         match solver.check(){
             SatResult::Sat =>{
-                println!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:");
-                //if self.verbose{
+                logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
 
                 let model = solver.get_model().unwrap();
                 for s in 0..self.number_inputs{
                     let v = model.eval(aux_signals_to_smt_rep.get(&(self.initial_signal + self.number_outputs + s)).unwrap(), true).unwrap();
-                    println!("Input signal {}: {}", self.initial_signal + self.number_outputs + s, v.to_string());
+                    logs.push(format!("Input signal {}: {}\n", self.initial_signal + self.number_outputs + s, v.to_string()));
 
                 }
                 for s in 0..self.number_outputs{
                     let v = model.eval(aux_signals_to_smt_rep.get(&(self.initial_signal + s)).unwrap(), true).unwrap();
                     let v1 = model.eval(aux_signals_to_smt_rep_aux.get(&(self.initial_signal + s)).unwrap(), true).unwrap();
 
-                    println!("Output signal {}: values {} | {}", self.initial_signal + s, v.to_string(), v1.to_string());
+                    logs.push(format!("Output signal {}: values {} | {}\n", self.initial_signal + s, v.to_string(), v1.to_string()));
 
                 }
 
@@ -645,11 +625,11 @@ impl TemplateVerification{
                 //}
             },
             SatResult::Unsat =>{
-                println!("### WEAK SAFETY ENSURED BY THE TEMPLATE");
+                logs.push(format!("### WEAK SAFETY ENSURED BY THE TEMPLATE\n"));
                 PossibleResult::VERIFIED
             },
             _=> {
-                println!("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT");
+                logs.push(format!("### UNKNOWN: VERIFICATION OF WEAK SAFETY USING THE SPECIFICATION TIMEOUT\n"));
                 PossibleResult::UNKNOWN
             }
         }
@@ -871,7 +851,7 @@ pub fn deduction_rule_apply_bounds_constraint(
     deductions: &mut Signal2Bounds,
     constraint: &Constraint<usize>,
     field: &BigInt, 
-    verbose: bool,
+    _verbose: bool,
 )-> Vec<usize> {
     let mut updated_signals = Vec::new();
 
@@ -889,16 +869,11 @@ pub fn deduction_rule_apply_bounds_constraint(
         &upper_limit_b
     );
 
-    //println!("Cota superior ab {}", upper_limit_ab);
-    //println!("Cota inferior ab {}", lower_limit_ab);
     
     let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression(deductions, &c, field);
 
     let lower_limit = lower_limit_c - upper_limit_ab;
     let upper_limit = upper_limit_c - lower_limit_ab;
-
-    //println!("Cota superior {}", upper_limit);
-    //println!("Cota inferior {}", lower_limit);
 
     for (signal, coef) in c{
         if coef == &BigInt::from(1) || *coef == field - &BigInt::from(1) {
@@ -933,9 +908,6 @@ pub fn deduction_rule_apply_bounds_constraint(
                 }
             }
             else if false && valid_consecutive{
-                if verbose{
-                    println!("Annadiendo bounds {} {} como de distinta ronda", pos_min, pos_max);
-                }
                 if update_bounds_signal(deductions, *signal, field - pos_min, pos_max, field){
                     updated_signals.push(signal.clone());
                 }
@@ -1043,7 +1015,7 @@ pub fn insert_constraint_in_smt(
     deductions: &Signal2Bounds,
     num_k : usize,
     p : &z3::ast::Int,
-    verbose: bool,
+    _verbose: bool,
 ){
     let mut value_a = z3::ast::Int::from_u64(ctx, 0);
     let mut value_b = z3::ast::Int::from_u64(ctx, 0);
@@ -1255,9 +1227,6 @@ pub fn insert_constraint_in_smt(
     
             let value_left = value_c - (value_a * value_b);
             let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k.to_string()).unwrap() * p;
-            if verbose{
-                println!("Constraint (does not need k because only one possible value) {} = {}", value_left.to_string(), value_right.to_string());
-            }
             solver.assert(&value_left._eq(&value_right));
         } else{
             let k = z3::ast::Int::new_const(&ctx, format!("k_{}", num_k));
@@ -1274,10 +1243,6 @@ pub fn insert_constraint_in_smt(
                     &z3::ast::Int::from_str(&ctx, &upper_limit_k.to_string()).unwrap()
                 )               
             );
-            if verbose{
-                println!("Constraint {} = {}", value_left.to_string(), value_right.to_string());
-                println!("Possible values k : {} - {}", lower_limit_k, upper_limit_k);
-            }
             solver.assert(&value_left._eq(&value_right));
         }
     }
@@ -1304,7 +1269,6 @@ pub fn insert_implication_in_smt(
 
     }
 
-    //println!("Implication: {} implies {}", value_left, value_right);
     solver.assert(&value_left.implies(&value_right));
     
 }

@@ -8,6 +8,7 @@ use program_structure::program_archive::ProgramArchive;
 pub struct ExecutionConfig {
     pub r1cs: String,
     pub sym: String,
+    pub civer_file: String,
     pub json_constraints: String,
     pub no_rounds: usize,
     pub flag_s: bool,
@@ -53,6 +54,7 @@ pub fn execute_project(
         check_safety: config.check_safety,
         add_tags_info: config.add_tags_info,
         add_postconditions_info: config.add_postconditions_info,
+        civer_file: config.civer_file
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;

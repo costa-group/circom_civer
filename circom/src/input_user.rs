@@ -13,6 +13,7 @@ pub struct Input {
     pub out_c_code: PathBuf,
     pub out_c_dat: PathBuf,
     pub out_sym: PathBuf,
+    pub out_civer: PathBuf,
     //pub field: &'static str,
     pub c_flag: bool,
     pub wasm_flag: bool,
@@ -51,6 +52,8 @@ const JS: &'static str = "js";
 const DAT: &'static str = "dat";
 const SYM: &'static str = "sym";
 const JSON: &'static str = "json";
+const CIVER: &'static str = "civer";
+
 
 
 impl Input {
@@ -86,6 +89,8 @@ impl Input {
             out_c_code: Input::build_output(&output_c_path, &file_name, CPP),
             out_c_dat: Input::build_output(&output_c_path, &file_name, DAT),
             out_sym: Input::build_output(&output_path, &file_name, SYM),
+            out_civer: Input::build_output(&output_path, &file_name, CIVER),
+
             out_json_constraints: Input::build_output(
                 &output_path,
                 &format!("{}_constraints", file_name),
@@ -149,6 +154,9 @@ impl Input {
     }
     pub fn sym_file(&self) -> &str {
         self.out_sym.to_str().unwrap()
+    }
+    pub fn civer_file(&self) -> &str {
+        self.out_civer.to_str().unwrap()
     }
     pub fn wat_file(&self) -> &str {
         self.out_wat_code.to_str().unwrap()

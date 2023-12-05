@@ -24,6 +24,8 @@ use program_structure::program_archive::ProgramArchive;
 use std::rc::Rc;
 use num_bigint_dig::BigInt;
 use std::collections::HashMap;
+use std::fs::File;
+use std::io::Write;
 
 
 pub struct BuildConfig {
@@ -43,6 +45,7 @@ pub struct BuildConfig {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub civer_file: String,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -82,7 +85,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
                 config.check_postconditions, 
                 config.check_safety, 
                 config.add_tags_info, 
-                config.add_postconditions_info
+                config.add_postconditions_info,
+                &config.civer_file
             );
         }
     }
@@ -117,7 +121,9 @@ fn export(exe: ExecutedProgram, program: ProgramArchive, flags: FlagsExecution) 
 
 fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout: u64, check_tags: bool, check_postconditions: bool,
-        check_safety: bool, add_tags_info: bool,add_postconditions_info: bool)
+        check_safety: bool, add_tags_info: bool,add_postconditions_info: bool,
+        name: &String,
+    )
     {
     use program_structure::constants::UsefulConstants;
 
@@ -135,12 +141,23 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     let mut safety_verified = Vec::new();
     let mut safety_failed = Vec::new();
     let mut safety_timeout = Vec::new();
+
     
-    check_tags_node(&tree_constraints, &mut studied_nodes, &field,
+    let result_create = File::create(name);
+    let mut cfile = if result_create.is_ok(){
+        result_create.unwrap()
+    } else{
+        unreachable!("Should not enter here")
+    };
+    let logs = check_tags_node(&tree_constraints, &mut studied_nodes, &field,
         verification_timeout, check_tags, check_postconditions,
         check_safety, add_tags_info, add_postconditions_info
     );
-    println!("\n\n\n");
+    for l in logs {
+        let _result =  cfile.write_all(l.as_bytes());
+    }
+    let _result = cfile.flush();
+
     for (component, (_, (result_tags, result_post, result_safety))) in &studied_nodes{
         //print!("Component {}: ", component);
         if check_tags{
@@ -192,12 +209,11 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
                 }
             }
         }
-        println!();
     }
 
-    println!();
     let _postconditions_total = studied_nodes.get(tree_constraints.pretty_template_name()).unwrap();
-    println!("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n");
+    println!();
+
     println!("--------------------------------------------");
     println!("--------------------------------------------");
     println!("-------- CIVER VERIFICATION RESULTS --------");
@@ -293,21 +309,22 @@ fn check_tags_node(
     check_safety: bool, 
     add_tags_info: bool, 
     add_postconditions_info: bool,
-){
+) -> Vec<String>{
     if !studied_nodes.contains_key(tree_constraints.pretty_template_name()){
         let mut number_tags_postconditions = tree_constraints.get_no_tags_postconditions();
         let mut number_postconditions = tree_constraints.get_no_postconditions();
+        let mut logs = Vec::new();
         for subcomponent in tree_constraints.subcomponents(){
-            check_tags_node(subcomponent, studied_nodes, field,
+            logs.append(&mut check_tags_node(subcomponent, studied_nodes, field,
                 verification_timeout, check_tags, check_postconditions, 
                 check_safety, add_tags_info, add_postconditions_info,
-            );
+            ));
             number_tags_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.0;
             number_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.1;
 
         }
 
-        let result_component = tree_constraints.check_tags(
+        let (result_tags, result_post, result_safety, mut new_logs) = tree_constraints.check_tags(
             field,
             verification_timeout,
             check_tags,
@@ -316,7 +333,13 @@ fn check_tags_node(
             add_tags_info, 
             add_postconditions_info,
         );
+        logs.append(&mut new_logs);
+        logs.push("\n\n".to_string());
+        let result_component = (result_tags, result_post, result_safety);
         studied_nodes.insert(tree_constraints.pretty_template_name().clone(), ((number_tags_postconditions, number_postconditions), result_component));
+        logs
+    } else{
+        Vec::new()
     }
 }
 
