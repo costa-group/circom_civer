@@ -108,8 +108,12 @@ impl TreeConstraints {
                 for s in new_signals{
                     verification.signals.push_back(s);
                 }
-                verification.implications.push(new_implication);
-                verification.tags_implications.push(new_tag_implication);
+                if new_implication.is_some(){
+                    verification.implications.push(new_implication.unwrap());
+                }
+                if new_tag_implication.is_some(){
+                    verification.tags_implications.push(new_tag_implication.unwrap());
+                }
                 verification.implications_safety.push(new_safety_implication);
             }
             Some(&self.subcomponents)
@@ -138,8 +142,12 @@ impl TreeConstraints {
         for subtree in &self.subcomponents{
             let (mut new_signals, new_implication, new_tag_implication, new_implications_safety) = subtree.generate_info_subtree();
             signals.append(&mut new_signals);
-            implications.push(new_implication);
-            tags_implications.push(new_tag_implication);
+            if new_implication.is_some(){
+                implications.push(new_implication.unwrap());
+            }
+            if new_tag_implication.is_some(){
+                tags_implications.push(new_tag_implication.unwrap());
+            }
             implications_safety.push(new_implications_safety)
         }
 
@@ -301,7 +309,7 @@ impl TreeConstraints {
         }
     }
 
-    fn generate_info_subtree(&self)-> (LinkedList<usize>, ExecutedImplication, ExecutedImplication, SafetyImplication){
+    fn generate_info_subtree(&self)-> (LinkedList<usize>, Option<ExecutedImplication>, Option<ExecutedImplication>, SafetyImplication){
         (   self.generate_io_signals(),
             self.generate_implications(), 
             self.generate_tags_implications(), 
@@ -316,10 +324,10 @@ impl TreeConstraints {
         } 
         signals
     }
-    fn generate_tags_implications(&self)-> ExecutedImplication{
+    fn generate_tags_implications(&self)-> Option<ExecutedImplication>{
         let mut left_conditions = Vec::new();
         let mut right_conditions = Vec::new();
-        if self.preconditions_intermediates.is_empty() {
+        if self.preconditions_intermediates.is_empty() && !self.tags_postconditions_outputs.is_empty() {
             for prec in &self.preconditions{
                 left_conditions.push(prec.clone());
             }
@@ -329,13 +337,16 @@ impl TreeConstraints {
             for post in &self.tags_postconditions_outputs{
                 right_conditions.push(post.clone());
             }
+            Some(ExecutedImplication{left: left_conditions, right: right_conditions})
+        } else{
+            None
         }
-        ExecutedImplication{left: left_conditions, right: right_conditions}
+
     }
-    fn generate_implications(&self)-> ExecutedImplication{
+    fn generate_implications(&self)-> Option<ExecutedImplication>{
         let mut left_conditions = Vec::new();
         let mut right_conditions = Vec::new();
-        if self.preconditions_intermediates.is_empty() {
+        if self.preconditions_intermediates.is_empty() && !self.postconditions_outputs.is_empty() {
             for prec in &self.preconditions{
                 left_conditions.push(prec.clone());
             }
@@ -345,8 +356,10 @@ impl TreeConstraints {
             for post in &self.postconditions_outputs{
                 right_conditions.push(post.clone());
             }
+            Some(ExecutedImplication{left: left_conditions, right: right_conditions})
+        } else{
+            None
         }
-        ExecutedImplication{left: left_conditions, right: right_conditions}
     }
     fn generate_implications_safety(&self)-> SafetyImplication{
         let mut list_inputs = Vec::new();

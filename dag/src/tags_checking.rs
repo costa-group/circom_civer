@@ -134,6 +134,18 @@ impl TemplateVerification{
         
         let mut init_signals = HashSet::new();
 
+        for ineq in &self.tags_preconditions{
+            let possible_bounds = get_bounds_expression_bool(ineq, &self.field);
+            for(signal, (min, max)) in possible_bounds{
+                if init_signals.contains(&signal){
+                        update_bounds_signal(&mut self.deductions, signal, min, max, &self.field);
+                    } else{
+                        self.deductions.insert(signal, ExecutedInequation{signal, min, max});        
+                        init_signals.insert(signal);
+                    }
+            }
+            
+        }
 
         for ineq in &self.preconditions{
             let possible_bounds = get_bounds_expression_bool(ineq, &self.field);
@@ -642,24 +654,29 @@ impl TemplateVerification{
 
 pub fn update_bounds_signal(deductions: &mut Signal2Bounds, signal: usize, min: BigInt, max: BigInt, field: &BigInt) -> bool{
     let pos_bounds = deductions.get_mut(&signal);
-    match pos_bounds{
-        None => {
 
-            deductions.insert(
-                signal,
-                ExecutedInequation{signal, min, max}
-            );
-            true
-        }
-        
-
-        Some(bounds) => {
-            if !(&bounds.min <= &BigInt::from(0) && &max >= &(field - &BigInt::from(1))){
-                bounds.update_bounds(min, max)
-            } else{
-                false
+    if &min >= &BigInt::from(0) && &max <= &(field - &BigInt::from(1)){
+        match pos_bounds{
+            None => {
+    
+                deductions.insert(
+                    signal,
+                    ExecutedInequation{signal, min, max}
+                );
+                true
             }
-        }
+            
+    
+            Some(bounds) => {
+                if !(&bounds.min <= &BigInt::from(0) && &max >= &(field - &BigInt::from(1))){
+                    bounds.update_bounds(min, max)
+                } else{
+                    false
+                }
+            }
+       }
+    } else{
+        false
     }
 }
 
@@ -1149,6 +1166,7 @@ pub fn insert_constraint_in_smt(
         solver.assert(&value_or);
     } else{
         // Apply deduction rule A * B = C => (C != 0) \/ (A = 0) \/ (B = 0)
+        
         let condition_c = 
             if upper_limit_k_c == lower_limit_k_c{
                 let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_c.to_string()).unwrap() * p;
@@ -1220,7 +1238,7 @@ pub fn insert_constraint_in_smt(
         value_or |= condition_a;
         value_or |= condition_b;
         solver.assert(&value_or);
-
+        
 
         // APPLY TRANSFORMATION RULE REMOVE MOD
         if lower_limit_k == upper_limit_k{
