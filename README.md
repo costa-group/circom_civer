@@ -13,7 +13,7 @@
 
 > CIRCUIT COMPILER FOR ZK PROVING SYSTEMS 
 
-This fork includes the verification tool CIVER. 
+This fork includes the verification tool CIVER (see more information in [CIVER tool](https://docs.circom.io/getting-started/civer/)). 
 
 [Circom](https://iden3.io/circom) is a novel domain-specific language for defining arithmetic circuits that can be used to generate zero-knowledge proofs. `Circom compiler` is a circom language compiler written in Rust that can be used to generate a R1CS file with a set of associated constraints and a program (written either in C++ or WebAssembly) to efficiently compute a valid assignment to all wires of the circuit. One of the main particularities of `circom` is its modularity that allows the programmers to define parameterizable circuits called templates, which can be instantiated to form larger circuits. The idea of building circuits from small individual components makes it easier to test, review, audit, or formally verify large and complex `circom` circuits. In this regard, `circom` users can create their own custom templates or instantiate templates from [circomLib](https://github.com/iden3/circomlib), a publicly available library that comes with hundreds of circuits such as comparators, hash functions, digital signatures, binary and decimal converters, and many more. Circomlib is publicly available to practitioners and developers.
 
@@ -28,7 +28,7 @@ At this time there are two available syntax highlighters: [circom Visual Studio 
 # Documentation
 All documentation is available in [circom 2 Documentation](https://docs.circom.io/), we encourage you to read it. If you are new start with the [Getting started section](https://docs.circom.io/getting-started/installation/).
 Basic background on Zero-knowledge proofs can be found on [Background section](https://docs.circom.io/background/background/).
-You can find more information about the use of CIVER on [CIVER tool](https://docs.circom.io/getting-started/civer/).
+You can find more information about the use of CIVER in [CIVER tool](https://docs.circom.io/getting-started/civer/).
 
 # Install
 
