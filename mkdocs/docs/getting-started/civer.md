@@ -5,7 +5,7 @@ description: >-
 
 # The CIVER tool
 
-`CIVER` is a verification tool that allows to verify some properties implemented in circom using the Z3 SMT-solver. 
+`CIVER` is a verification tool that allows us to verify properties of circuits implemented using the circom programming language. The verification problem is first transformed to make it suitable for the state-of-the-art SMT solvers and then proved in a modular way. CIVER uses the Z3 SMT-solver as back-end. 
 
 
 CIVER is activated when compiling a circuit using the flag `--civer`.
@@ -13,7 +13,7 @@ We have implemented three use modes `--check_tags`, `--check_postconditions`, an
 
 
 ## Tag Verification
-As explained in [Tag Section](), the circom compiler does not check if any tag is satisfied, since it only makes some syntactic checks. The tag semantics must be given by the programmer according to the logic of tags used in their circuit. In circom, we can give the semantics of a tag as follows:
+As explained in [Tag Section](), the circom compiler does not check whether the semantics associated to the tag is satisfied by the tagged signals, since it only makes syntactic checks. In order to formally verify that the signals meet such semantics, the programmer should provide a formal definition of the tag semantics. In the CIVER extension of circom, the semantics of a tag is defined as follows:
 
 ```text  
 spec_tags {tag_name} signal_name{
@@ -21,9 +21,9 @@ spec_tags {tag_name} signal_name{
 }
 ```
 
-We can specify a boolean formula depending on the signal name and the tag value, in case the tag has a value.
+We can specify a quantifier-free boolean formula depending on the signal name and the tag value (in case the tag has a value).
 
-For instance, we can specify that a signal is a binary with the next specification:
+For instance, we can specify that a signal has a tag ```binary``` (which has no value) as follows:
 
 ```text  
 spec_tags {binary} in{
@@ -31,24 +31,25 @@ spec_tags {binary} in{
 }
 ```
 
-This specification uses not only the signal but also the value of the tag maxbit:
+Similarly, we can sècify the semantics of the tag ```maxbit``` (which has a value), as follows:
 ```text
 spec_tags {maxbit} in{
         0 <= in && in <= 2**in.maxbit-1
 }
 ```
 
-The specification of a tag can be more general than some bounds. For instance:
+Another example (not using bounds) is when defining the ```non_zero``` tag: 
 
 ```text
-spec_tags {is_zero} in{
-        in == 0
+spec_tags {non_zero} in{
+        in != 0
 }
 ```
 
-All the tag specifications are collected in a circom file, usually named as `tags_specification.circom`,and this file must be included always after the parameter `--civer` when using the command `circom`.
+In order to avoid conflicts when using the official cicom compiler, all tag specifications can be collected in a single file, usually named `tags_specification.circom`. If so, this file is given after the parameter `--civer` when using the command `circom`. 
 
-Using these tag specifications, we can try to verify the next circuit called `circuit_tags.circom`:
+
+Let us see how to use it with an example. Suppose we have included the specification of the tag ```maxbit``` in the file `tags_specification.circom` and we want to verify the next circuit called `circuit_tags.circom`:
 
 ```text
 template AddMaxbitTag(n) {
@@ -61,8 +62,11 @@ template AddMaxbitTag(n) {
     out <== in;
 }
 ```
+To do so, we run the following command:
 
-If we execute the command `circom unsafe.circom --civer tags_specification.circom --check_tags`, we obtain the next output:
+```circom unsafe.circom --civer tags_specification.circom --check_tags``` 
+
+and we obtain the next output:
 
 ```text
 -> All tags were verified :)
