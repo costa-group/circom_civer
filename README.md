@@ -28,7 +28,7 @@ At this time there are two available syntax highlighters: [circom Visual Studio 
 # Documentation
 All documentation is available in [circom 2 Documentation](https://docs.circom.io/), we encourage you to read it. If you are new start with the [Getting started section](https://docs.circom.io/getting-started/installation/).
 Basic background on Zero-knowledge proofs can be found on [Background section](https://docs.circom.io/background/background/).
-You can find more information about the use of CIVER in [CIVER tool](https://github.com/costa-group/circom_civer/getting-started/civer).
+You can find more information about the use of CIVER in [CIVER tool](https:/mkdocs/docs/getting-started/civer.md).
 
 # Install
 
