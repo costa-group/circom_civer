@@ -76,13 +76,10 @@ and we obtain the next output:
 ```
 
 ## Pre-/Post-conditions Verification
-We can add preconditions and postconditions to a template, claiming some properties using quantifier-free formulas over the signals of the circuit. 
-The current instructions are `spec_precondition Exp` and `spec_postcondition Exp`, respectively. 
-Then, CIVER tries to prove that if the preconditions are satisfied, then the postconditions are also satisfied. 
+We can add preconditions and postconditions to a template as a (partial) specification of its behavior using quantifier-free formulas over the signals of the circuit. The current instructions to provide preconditions and postconditions are `spec_precondition Exp` and `spec_postcondition Exp`, respectively. 
+Then, CIVER tries to prove that the postconditions are satisfied by the circuit assuming the preconditions are satisfied. 
 
-For instance, let us consider the next example:
-
-Let us consider the next circuit, called `conditions.circom`:
+For instance, let us consider the next circuit, called `conditions.circom` (where we have provided a postcondition):
 
 ```text
 template LessThan(n) {
@@ -101,7 +98,11 @@ template LessThan(n) {
     spec_postcondition out == (in[0] < in[1]);
 }
 ```
-If we execute the command `circom conditions.circom --civer --check_postconditions`, we obtain the next output:
+If we execute the command 
+
+```circom conditions.circom --civer --check_postconditions```
+
+we obtain the next output:
 
 ```text
 -> All postconditions were verified :)
@@ -112,12 +113,12 @@ If we execute the command `circom conditions.circom --civer --check_postconditio
 
 After the parameter `--civer`, we can optionally include the file `tags_specification` to use the tag semantics to help the SMT solver to prove the postconditions.
 
-When dealing with cryptographic structures, some properties are often assumed by the programmers. CIVER usually needs these properties to reason about the different properties of the circuit. In this case, we can use the instruction `spec_fact` to claim a fact that CIVER interprets as true. 
+When dealing with cryptographic structures, some properties are often assumed by the programmers. CIVER usually needs these properties to reason about the different properties of the circuit. In this case, we can use the instruction `spec_fact Exp` to claim a fact that CIVER interprets as true. 
 
 ## Weak-Safety Verification
-Using the `--check_safety` option, CIVER tries to prove that the circuit satisfy the weak-safety property. Intuitively, a circuit is called weak-safety when for any input of the circuit, the constraint system describing the circuit ensures that there is a unique possible assignment for the output signals for the given inputs. 
+Using the `--check_safety` option, CIVER tries to prove that the circuit satisfy the weak-safety property. Intuitively, a circuit is called weak-safety if for all possible inputs there is at most one possible assignment for the output signals that satisfy the constraint system describing the circuit (note that this ensures that the constraints define a deterministic circuit). 
 
-Let us consider the next circuit, called `safe_iszero.circom`:
+Let us consider the next circuit, called `iszero.circom`:
 ```text  
 template IsZero() {
     signal input in;
@@ -133,7 +134,11 @@ template IsZero() {
 
 ```
 
-If we execute the command `circom safe_iszero.circom --civer --check_safety`, we obtain the next output:
+If we execute the command 
+
+```circom iszero.circom --civer --check_safety``` 
+
+we obtain the next output:
 
 ```text
 -> All components satisfy weak safety :)
@@ -142,7 +147,7 @@ If we execute the command `circom safe_iszero.circom --civer --check_safety`, we
   * Number of timeout components (weak-safety): 0
 ```
 
-Let us imagine we forget adding the last constraint in the previous circuit (called `unsafe_iszero.circom`):
+Let us imagine we forget adding the last constraint in the previous circuit (and we call the file `unsafe_iszero.circom`):
 ```text  
 template IsZero() {
     signal input in;
@@ -157,7 +162,11 @@ template IsZero() {
 }
 ```
 
-If we execute the command `circom unsafe_iszero.circom --civer --check_safety`, we obtain the next output:
+Now, if we execute the command 
+
+```circom unsafe_iszero.circom --civer --check_safety```
+
+we obtain the next output:
 
 ```text
 -> CIVER could not verify weak safety of all components
