@@ -162,7 +162,7 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         //print!("Component {}: ", component);
         if check_tags{
             match result_tags{
-                PossibleResult::FAILED => {
+                PossibleResult::FAILED(_) => {
                 	//println!("TAGS VERIFICATION FAILED || ");
                 	tags_failed.push(component);
                 }
@@ -179,7 +179,7 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         }
         if check_postconditions{
             match result_post{
-                PossibleResult::FAILED => {
+                PossibleResult::FAILED(_) => {
                 	//println!("POSTCONDITIONS VERIFICATION FAILED || ");
                 	post_failed.push(component);
                 },
@@ -195,7 +195,7 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         }
         if check_safety{
             match result_safety{
-                PossibleResult::FAILED => {
+                PossibleResult::FAILED(_) => {
                     safety_failed.push(component);
                     //println!("WEAK SAFETY VERIFICATION FAILED || ");
                 },

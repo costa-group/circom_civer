@@ -1,5 +1,6 @@
 use std::{collections::{HashMap, LinkedList}, cmp::max};
 use num_bigint_dig::BigInt;
+use std::str::FromStr;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
 use circom_algebra::{modular_arithmetic, algebra::{
@@ -334,15 +335,16 @@ impl TemplateVerification{
         match solver.check(){
             SatResult::Sat =>{
                 logs.push(format!("### THE VERIFICATION OF THE TAGS OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT:\n"));
-                //if self.verbose{
 
                  let model = solver.get_model().unwrap();
+                 let mut counterexample = HashMap::new();
                  for s in &self.signals{
                      let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
                      logs.push(format!("Signal {}: {}\n", s, v.to_string()));
+                     counterexample.insert(*s, BigInt::from_str(&v.to_string()).unwrap());
+
                  }
-                //}
-                PossibleResult::FAILED
+                PossibleResult::FAILED(counterexample)
             },
             SatResult::Unsat =>{
                 logs.push(format!("### SUCCESS: THE TAGS OF THE TEMPLATE ARE VERIFIED\n"));
@@ -444,12 +446,14 @@ impl TemplateVerification{
                 //if self.verbose{
 
                  let model = solver.get_model().unwrap();
+                 let mut counterexample = HashMap::new();
                  for s in &self.signals{
                      let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
                      logs.push(format!("Signal {}: {}\n", s, v.to_string()));
+                     counterexample.insert(*s, BigInt::from_str(&v.to_string()).unwrap());
+
                  }
-                //}
-                PossibleResult::FAILED
+                PossibleResult::FAILED(counterexample)
             },
             SatResult::Unsat =>{
                 logs.push(format!("### SUCCESS: THE SPECIFICATION OF THE TEMPLATE IS VERIFIED\n"));
@@ -633,7 +637,7 @@ impl TemplateVerification{
 
                 }
 
-                PossibleResult::FAILED
+                PossibleResult::FAILED(HashMap::new())// Queda por hacer el caso de weak-safety el contraejemplo
                 //}
             },
             SatResult::Unsat =>{
@@ -1676,4 +1680,157 @@ fn update_bounds_and(map: &mut HashMap<usize, (BigInt, BigInt)>, left: HashMap<u
     }
 
 
+}
+
+
+
+
+pub struct TemplateSatisfiability {
+    pub template_name: String,
+    pub signals: LinkedList<usize>,
+    pub constraints: Vec<Constraint<usize>>,
+    pub deductions: Signal2Bounds,
+    pub field: BigInt,
+    pub verification_timeout: u64,
+    pub implications: Vec<ExecutedImplication>,
+    pub tags_implications: Vec<ExecutedImplication>,
+}
+
+impl TemplateSatisfiability{
+
+    pub fn new(
+        template_name: &String,
+        signals: LinkedList<usize>,
+        constraints: Vec<Constraint<usize>>,
+        verification_timeout: u64,
+        field: &BigInt, 
+    ) -> TemplateSatisfiability {
+        let mut fixed_constraints = Vec::new();
+        for mut c in constraints{
+            Constraint::fix_constraint(&mut c, field);
+            fixed_constraints.push(c);
+        }
+
+        TemplateSatisfiability {
+            template_name: template_name.clone(),
+            signals,
+            deductions: HashMap::new(),
+            constraints: fixed_constraints,
+            field: field.clone(),   
+            verification_timeout,
+            implications: Vec::new(),
+            tags_implications: Vec::new(),
+        }
+    }
+
+    pub fn deduce(&mut self)-> (PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
+        
+        self.deduce_round();
+        let mut logs = Vec::new();
+
+        let sat_result = self.try_check_satisfiability(&mut logs);
+        (sat_result, logs)
+
+    }
+
+        // returns the signals where it was able to find new bounds
+    pub fn deduce_round(&mut self)-> Vec<usize>{
+        let mut new_signal_bounds:Vec<usize> = Vec::new();
+        let mut new_signal_bounds_iteration = Vec::new();
+        
+        let filter_const = std::mem::take(&mut self.constraints);
+    
+        for c in filter_const{
+            let should_remove = deduction_rule_integrity_domain(&mut self.deductions, &c, &self.field); 
+            if !should_remove{ 
+                self.constraints.push(c);
+            }
+        } 
+    
+        for c in &self.constraints{
+            new_signal_bounds_iteration.append(&mut deduction_rule_apply_bounds_constraint(&mut self.deductions, &c, &self.field, false));
+        }
+    
+        while !new_signal_bounds_iteration.is_empty(){
+            new_signal_bounds.append(&mut new_signal_bounds_iteration);
+            for c in &self.constraints{
+                  
+                new_signal_bounds_iteration.append(&mut deduction_rule_apply_bounds_constraint(&mut self.deductions, &c, &self.field, false));
+            }
+        }
+        new_signal_bounds
+    }
+
+    pub fn try_check_satisfiability(&self, logs: &mut Vec<String>)-> PossibleResult{
+        
+        let mut cfg = Config::new();
+        cfg.set_timeout_msec(self.verification_timeout);
+        let ctx: Context = Context::new(&cfg);
+        let solver: Solver<'_> = Solver::new(&ctx);
+        let zero = z3::ast::Int::from_i64(&ctx, 0);
+        let field = z3::ast::Int::from_str(&ctx, &self.field.to_string()).unwrap();
+        
+        let mut aux_signals_to_smt_rep = HashMap::new();
+        for s in &self.signals{
+            let aux_signal_to_smt = z3::ast::Int::new_const(&ctx, format!("s_{}", s));
+            
+            match self.deductions.get(s){
+                None =>{ // cambiar a que sea un -p/2 a p/2 + 1?
+                    solver.assert(&aux_signal_to_smt.ge(&zero));
+                    solver.assert(&aux_signal_to_smt.lt(&field));
+                }
+                Some(bounds) =>{
+
+                    let condition = get_z3_condition_bounds(
+                        &ctx, 
+                        &aux_signal_to_smt, 
+                        &bounds.min, 
+                        &bounds.max, 
+                        &self.field
+                    );
+
+                    solver.assert(&condition);
+                }
+            }
+            aux_signals_to_smt_rep.insert(*s, aux_signal_to_smt);
+        }
+
+        let mut i = 0;
+        for constraint in &self.constraints{
+            insert_constraint_in_smt(constraint, &ctx, &solver, &aux_signals_to_smt_rep, &self.field, 
+                                        &self.deductions, i, &field, false);
+            i = i + 1;
+        }
+        for implication in &self.tags_implications{
+            insert_implication_in_smt(implication, &ctx, &solver, &aux_signals_to_smt_rep, &self.field);
+        }
+        for implication in &self.implications{
+            insert_implication_in_smt(implication, &ctx, &solver, &aux_signals_to_smt_rep, &self.field);
+        }
+
+        match solver.check(){
+            SatResult::Sat =>{
+                logs.push(format!("### FOUND AN EXTENSION FOR THE COUNTEREXAMPLE IN SUBCOMPONENT {}:\n", self.template_name));
+                //if self.verbose{
+
+                 let model = solver.get_model().unwrap();
+                 let mut counterexample = HashMap::new();
+                 for s in &self.signals{
+                     let v = model.eval(aux_signals_to_smt_rep.get(s).unwrap(), true).unwrap();
+                     logs.push(format!("Signal {}: {}\n", s, v.to_string()));
+                     counterexample.insert(*s, BigInt::from_str(&v.to_string()).unwrap());
+
+                 }
+                PossibleResult::FAILED(counterexample)
+            },
+            SatResult::Unsat =>{
+                logs.push(format!("### THE COUNTEREXAMPLE DOES NOT SATISFY THE CONSTRAINTS OF SUBCOMPONENT {}\n", self.template_name));
+                PossibleResult::UNKNOWN
+            },
+            _=> {
+                logs.push(format!("### UNKNOWN: VERIFICATION OF THE COUNTEREXAMPLE TIMEOUT IN SUBCOMPONENT {}\n",self.template_name));
+                PossibleResult::UNKNOWN
+            }
+        }
+    }
 }

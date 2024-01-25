@@ -6,7 +6,7 @@ mod sym_porting;
 mod witness_producer;
 mod tags_checking;
 
-use tags_checking::TemplateVerification;
+use tags_checking::{TemplateVerification, TemplateSatisfiability};
 use circom_algebra::num_bigint::BigInt;
 use constraint_list::ConstraintList;
 use constraint_writers::debug_writer::DebugWriter;
@@ -33,14 +33,22 @@ pub struct ExecutedImplication{
 
 #[derive(PartialEq, Eq)] 
 pub enum PossibleResult{
-    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
+    VERIFIED, 
+    UNKNOWN, 
+    NOSTUDIED, 
+    NOTHING, 
+    FAILED(HashMap<usize, BigInt>), // includes the counterexample
 } impl PossibleResult {
-    fn finished_verification(&self) -> bool{
-        self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
+    fn finished_verification(&self, is_safety_check:bool) -> bool{
+        match &self{
+            PossibleResult::UNKNOWN => false,
+            PossibleResult::FAILED(_) => !is_safety_check,
+            _ => true,
+        }
     }
     fn result_to_str(&self)-> String{
         match self{
-            &PossibleResult::FAILED => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
+            &PossibleResult::FAILED(_) => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
             &PossibleResult::UNKNOWN => {format!("UNKNOWN -> VERIFICATION TIMEOUT\n")}
             &PossibleResult::NOTHING => {format!("NOTHING TO VERIFY\n")}
             _ => {format!("VERIFIED\n")}
@@ -194,7 +202,31 @@ impl TreeConstraints {
         let inicio = Instant::now();
 
         let (mut result_tags, mut result_postconditions, mut result_safety, mut logs_round) = verification.deduce();
-        let mut finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+        
+        
+        if let PossibleResult::FAILED(counterexample) = result_tags {
+            logs.push("### Checking if the counterexample found for the tags satisfies the constraints of the children subcomponents\n".to_string());
+            result_tags = self.check_counterexample(&counterexample, verification_timeout, field); 
+            if result_tags == PossibleResult::UNKNOWN{
+                logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+            } else{
+                logs.push("-----> The counterexample is valid \n".to_string());
+            }
+        }
+
+        if let PossibleResult::FAILED(counterexample) = result_postconditions {
+            logs.push("### Checking if the counterexample found for the postconditions satisfies the constraints of the children subcomponents\n".to_string());
+            result_postconditions = self.check_counterexample(&counterexample, verification_timeout, field); 
+            if result_postconditions == PossibleResult::UNKNOWN{
+                logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+            } else{
+                logs.push("-----> The counterexample is valid \n".to_string());
+            }
+        }
+        
+        let mut finished_verification = result_tags.finished_verification(false) &&  result_postconditions.finished_verification(false) && result_safety.finished_verification(true);
+        
+        
         logs.append(&mut logs_round);
         if finished_verification{
             let duration = inicio.elapsed();    
@@ -239,7 +271,29 @@ impl TreeConstraints {
 
             logs.push(format!("### Trying to verify adding constraints of the children\n"));
             (result_tags, result_postconditions, result_safety, logs_round) = verification.deduce();
-            finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+            
+                    
+            if let PossibleResult::FAILED(counterexample) = result_tags {
+                logs.push("### Checking if the counterexample found for the tags satisfies the constraints of the children subcomponents\n".to_string());
+                result_tags = self.check_counterexample(&counterexample, verification_timeout, field); 
+                if result_tags == PossibleResult::UNKNOWN{
+                    logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+                } else{
+                    logs.push("-----> The counterexample is valid \n".to_string());
+                }  
+            }
+
+            if let PossibleResult::FAILED(counterexample) = result_postconditions {
+                logs.push("### Checking if the counterexample found for the postconditions satisfies the constraints of the children subcomponents\n".to_string());
+                result_postconditions = self.check_counterexample(&counterexample, verification_timeout, field); 
+                if result_postconditions == PossibleResult::UNKNOWN{
+                    logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+                } else{
+                    logs.push("-----> The counterexample is valid \n".to_string());
+                }
+            }
+            
+            finished_verification = result_tags.finished_verification(false) &&  result_postconditions.finished_verification(false) && result_safety.finished_verification(true);
             logs.append(&mut logs_round);
             while !finished_verification && !to_check_next.is_empty(){
                 let new_components = std::mem::take(&mut to_check_next);
@@ -266,7 +320,27 @@ impl TreeConstraints {
 
                 logs.push(format!("### Trying to verify adding constraints of the children\n"));
                 (result_tags, result_postconditions, result_safety, logs_round) = verification.deduce();
-                finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
+                        
+                if let PossibleResult::FAILED(counterexample) = result_tags {
+                    logs.push("### Checking if the counterexample found for the tags satisfies the constraints of the children subcomponents\n".to_string());
+                    result_tags = self.check_counterexample(&counterexample, verification_timeout, field); 
+                    if result_tags == PossibleResult::UNKNOWN{
+                        logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+                    } else{
+                        logs.push("-----> The counterexample is valid \n".to_string());
+                    }
+                }
+
+                if let PossibleResult::FAILED(counterexample) = result_postconditions {
+                    logs.push("### Checking if the counterexample found for the postconditions satisfies the constraints of the children subcomponents\n".to_string());
+                    result_postconditions = self.check_counterexample(&counterexample, verification_timeout, field); 
+                    if result_postconditions == PossibleResult::UNKNOWN{
+                        logs.push("-----> The counterexample does not satisfy the constraints of the children \n".to_string());
+                    } else{
+                        logs.push("-----> The counterexample is valid \n".to_string());
+                    }
+                }
+                finished_verification = result_tags.finished_verification(false) &&  result_postconditions.finished_verification(false) && result_safety.finished_verification(true);
                 logs.append(&mut logs_round);
             }
             let duration = inicio.elapsed();    
@@ -361,6 +435,7 @@ impl TreeConstraints {
             None
         }
     }
+
     fn generate_implications_safety(&self)-> SafetyImplication{
         let mut list_inputs = Vec::new();
         let mut list_outputs = Vec::new();
@@ -371,6 +446,110 @@ impl TreeConstraints {
             list_inputs.push(self.initial_signal + self.number_outputs + s);
         }
         (list_inputs, list_outputs)
+    }
+
+    fn add_component_constraints(&self, sat_problem: &mut TemplateSatisfiability){
+
+        for c in &self.constraints{
+            sat_problem.constraints.push(c.clone());
+        }
+        for s in 0..self.number_signals{
+            sat_problem.signals.push_back(s+self.initial_signal);
+        }
+
+        for subtree_child in &self.subcomponents{
+            subtree_child.add_component_constraints(sat_problem);
+        }
+    }
+
+    fn check_counterexample(&self, counterexample: &HashMap<usize, BigInt>, verification_timeout: u64, field: &BigInt) -> PossibleResult{
+        
+        for subtree_child in &self.subcomponents{
+            let mut assignment_child = HashMap::new();
+            
+            for s in 0..subtree_child.number_outputs + subtree_child.number_inputs{
+                let value_s = counterexample.get(&(subtree_child.initial_signal + s)).unwrap();
+                assignment_child.insert(subtree_child.initial_signal + s, value_s.clone());
+            }
+            let result = subtree_child.check_satisfiable(&assignment_child, verification_timeout, field);
+            if result == PossibleResult::UNKNOWN{
+                return PossibleResult::UNKNOWN;
+            }
+        }
+        
+        PossibleResult::FAILED(HashMap::new())
+    }
+
+    fn check_satisfiable(&self, assignment: &HashMap<usize, BigInt>, verification_timeout: u64, field: &BigInt)-> PossibleResult{
+        use circom_algebra::algebra::ArithmeticExpression;
+        
+        let mut substitutions_to_apply = Vec::new();
+        for (signal, value) in assignment{
+            let subs = Substitution::new(
+                *signal, 
+                ArithmeticExpression::Number{value: value.clone()}
+            ).unwrap();
+            substitutions_to_apply.push(subs);
+        }
+
+        let mut new_constraints = Vec::new();
+        for c in &self.constraints{
+            let mut copy_c = c.clone();
+            for s in &substitutions_to_apply{
+                Constraint::apply_substitution(&mut copy_c, s, field);
+            }
+            new_constraints.push(copy_c);
+
+        }
+
+        let mut signals = LinkedList::new();
+        for s in (self.number_inputs + self.number_outputs)..self.number_signals{
+            signals.push_back(s+self.initial_signal);
+        }
+
+        println!("Verificando contraejemplo en {}", self.template_name);
+        println!("Asignacion:");
+        for (s, v) in assignment{
+            println!("Signal {}, value {}", s, v);
+        }
+        println!("Numero de constraints {:?}", new_constraints.len());
+
+
+        let mut satisfiability_template = TemplateSatisfiability::new(
+            &self.template_name,
+            signals,
+            new_constraints,
+            verification_timeout,
+            field
+        );
+
+        for subtree_child in &self.subcomponents{
+            let (new_signals, new_implication, new_tag_implication, _new_safety_implication) = subtree_child.generate_info_subtree();
+            for s in new_signals{
+                satisfiability_template.signals.push_back(s);
+            }
+            if new_implication.is_some(){
+                satisfiability_template.implications.push(new_implication.unwrap());
+            }
+            if new_tag_implication.is_some(){
+                satisfiability_template.tags_implications.push(new_tag_implication.unwrap());
+            }
+            
+        }
+
+        let (sat_result, _logs) = satisfiability_template.deduce();
+        match sat_result{
+            PossibleResult::FAILED(assign) =>{
+                println!("Componente verificado {}", self.template_name);
+                self.check_counterexample(&assign, verification_timeout, field)
+            }
+            _ => {
+                println!("Contraejemplo no valido {}", self.template_name);
+                sat_result
+            }
+        }
+        
+        
     }
 
 
