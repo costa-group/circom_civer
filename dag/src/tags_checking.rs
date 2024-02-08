@@ -571,8 +571,17 @@ impl TemplateVerification{
             i = i + 1;
         }
 
-
-        apply_deduction_rule_homologues(&self.constraints,  &ctx, &solver, &aux_signals_to_smt_rep, &aux_signals_to_smt_rep_aux, &self.field, &field);
+        apply_deduction_rule_homologues(
+            &self.constraints, 
+            &ctx, 
+            &solver, 
+            &aux_signals_to_smt_rep,
+            &aux_signals_to_smt_rep_aux,
+            &self.deductions,
+            &self.field, 
+            &field
+        );
+    
 
 
 
@@ -613,7 +622,6 @@ impl TemplateVerification{
         } 
 
         solver.assert(&!all_outputs_equal);
-        
 
         match solver.check(){
             SatResult::Sat =>{
@@ -942,6 +950,7 @@ pub fn apply_deduction_rule_homologues(
     solver: &Solver,
     signals_to_smt_symbols_1: &HashMap<usize, z3::ast::Int>,
     signals_to_smt_symbols_2: &HashMap<usize, z3::ast::Int>,
+    deductions: &Signal2Bounds,
     field: &BigInt,
     p : &z3::ast::Int,
 ){
@@ -990,30 +999,104 @@ pub fn apply_deduction_rule_homologues(
             }
         }
 
+
+        let c_a = c.a();
+        let c_b = c.b();
+        let c_c = c.c();
+        let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression_strict(deductions, &c_a, field);
+        let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression_strict(deductions, &c_b, field);
+        let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression_strict(deductions, &c_c, field);
+    
+        let lower_limit_k_aa =  (&lower_limit_a - &upper_limit_a)/field;
+        let upper_limit_k_aa = if (&upper_limit_a - &lower_limit_a)/field > BigInt::from(0) && (&upper_limit_a - &lower_limit_a)%field != BigInt::from(0) {
+            (&upper_limit_a - &lower_limit_a)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_a - &lower_limit_a)/field
+        };
+
+        let lower_limit_k_bb =  (&lower_limit_b - &upper_limit_b)/field;
+        let upper_limit_k_bb = if (&upper_limit_b - &lower_limit_b)/field > BigInt::from(0) && (&upper_limit_b - &lower_limit_b)%field != BigInt::from(0) {
+            (&upper_limit_b - &lower_limit_b)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_b - &lower_limit_b)/field
+        };
+
+        let lower_limit_k_cc =  (&lower_limit_c - &upper_limit_c)/field;
+        let upper_limit_k_cc = if (&upper_limit_c - &lower_limit_c)/field > BigInt::from(0) && (&upper_limit_c - &lower_limit_c)%field != BigInt::from(0) {
+            (&upper_limit_c - &lower_limit_c)/field + BigInt::from(1)
+        } else{
+            (&upper_limit_c - &lower_limit_c)/field
+        };
+
         let zero = z3::ast::Int::from_u64(&ctx, 0);
-        let condition_aa = &(&value_a - &value_a1)._eq(&zero);
-        let condition_bb = &(&value_b - &value_b1)._eq(&zero);
-        let condition_cc = &(&value_c - &value_c1)._eq(&zero);
+        
+        let condition_aa = if lower_limit_k_aa == upper_limit_k_aa{
+            let value_left = &value_a - &value_a1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_aa.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_a - &value_a1).modulo(&p)._eq(&zero)
+        };
+        let condition_bb = if lower_limit_k_bb == upper_limit_k_bb{
+            let value_left = &value_b - &value_b1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_bb.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_b - &value_b1).modulo(&p)._eq(&zero)
+        };
+        let condition_cc = if lower_limit_k_cc == upper_limit_k_cc{
+            let value_left = &value_c - &value_c1;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_cc.to_string()).unwrap() * p;
+            value_left._eq(&value_right)
+        } else{
+            (&value_c - &value_c1).modulo(&p)._eq(&zero)
+        };
 
         let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
-        value_cond |= !condition_aa;
-        value_cond |=  !condition_bb;
-        value_cond |=  condition_cc;
+        value_cond |= !&condition_aa;
+        value_cond |=  !&condition_bb;
+        value_cond |=  &condition_cc;
         solver.assert(&value_cond);
 
+        let lower_limit_k_a =  &lower_limit_a /field;
+        let upper_limit_k_a = if &upper_limit_a /field > BigInt::from(0) && &upper_limit_a%field != BigInt::from(0) {
+            &upper_limit_a /field + BigInt::from(1)
+        } else{
+            &upper_limit_a/field
+        };
 
-        let condition_a_not_zero = !&value_a.modulo(&p)._eq(&zero);
+        let condition_a_not_zero = if lower_limit_k_a == upper_limit_k_a{
+            let value_left = &value_a;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_a.to_string()).unwrap() * p;
+            !value_left._eq(&value_right)
+        } else{
+            !&value_a.modulo(&p)._eq(&zero)
+        };
+        
         let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
-        value_cond |= !(condition_aa & condition_a_not_zero);
-        value_cond |=  !condition_cc;
-        value_cond |=  condition_bb;
+        value_cond |= !(&condition_aa & &condition_a_not_zero);
+        value_cond |=  !&condition_cc;
+        value_cond |=  &condition_bb;
         solver.assert(&value_cond);
 
-        let condition_b_not_zero = !&value_b.modulo(&p)._eq(&zero);
+        let lower_limit_k_b =  &lower_limit_b /field;
+        let upper_limit_k_b = if &upper_limit_b /field > BigInt::from(0) && &upper_limit_b%field != BigInt::from(0) {
+            &upper_limit_b /field + BigInt::from(1)
+        } else{
+            &upper_limit_b/field
+        };
+
+        let condition_b_not_zero = if lower_limit_k_b == upper_limit_k_b{
+            let value_left = &value_b;
+            let value_right = z3::ast::Int::from_str(ctx, &lower_limit_k_b.to_string()).unwrap() * p;
+            !value_left._eq(&value_right)
+        } else{
+            !&value_b.modulo(&p)._eq(&zero)
+        };  
         let mut value_cond = z3::ast::Bool::from_bool(&ctx, false);
-        value_cond |= !(condition_bb & condition_b_not_zero);
-        value_cond |=  !condition_cc;
-        value_cond |=  condition_aa;
+        value_cond |= !(&condition_bb & condition_b_not_zero);
+        value_cond |=  !&condition_cc;
+        value_cond |=  &condition_aa;
         solver.assert(&value_cond);
 
     }
@@ -1384,6 +1467,12 @@ fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt
                     
 
                     ExpressionInfixOpcode::IntDiv => Ok(l_string / r_string),
+
+                    ExpressionInfixOpcode::Eq => {
+                        let is_eq = l_string._eq(&r_string);
+                        Ok(is_eq.ite(&z3::ast::Int::from_i64(&ctx, 1), &z3::ast::Int::from_i64(&ctx, 0)))
+                    }
+                   
                     _ => Err(()),
                 }
         
