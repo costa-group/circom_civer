@@ -2,6 +2,7 @@ use std::{collections::{HashMap, LinkedList}, cmp::max};
 use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
+use std::fs;
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
@@ -190,7 +191,7 @@ impl TemplateVerification{
 
     pub fn deduce(&mut self)-> (PossibleResult, PossibleResult, PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
         
-        self.deduce_round();
+        //self.deduce_round();
 
         let mut logs = Vec::new();
 
@@ -487,13 +488,13 @@ impl TemplateVerification{
 
             match self.deductions.get(s){
                 None =>{
-                    solver.assert(&aux_signal_to_smt.ge(&zero));
+                    /*solver.assert(&aux_signal_to_smt.ge(&zero));
                     solver.assert(&aux_signal_to_smt.lt(&field));
                     solver.assert(&copy_aux_signal_to_smt.ge(&zero));
-                    solver.assert(&copy_aux_signal_to_smt.lt(&field));
+                    solver.assert(&copy_aux_signal_to_smt.lt(&field));*/
                 }
                 Some(bounds) =>{
-
+                    /*
                     let condition = get_z3_condition_bounds(
                         &ctx, 
                         &aux_signal_to_smt, 
@@ -511,6 +512,7 @@ impl TemplateVerification{
                         &self.field
                     );
                     solver.assert(&condition);
+                    */
                 }
             }
 
@@ -571,7 +573,7 @@ impl TemplateVerification{
             i = i + 1;
         }
 
-        apply_deduction_rule_homologues(
+        /*apply_deduction_rule_homologues(
             &self.constraints, 
             &ctx, 
             &solver, 
@@ -580,7 +582,7 @@ impl TemplateVerification{
             &self.deductions,
             &self.field, 
             &field
-        );
+        );*/
     
 
 
@@ -623,7 +625,30 @@ impl TemplateVerification{
 
         solver.assert(&!all_outputs_equal);
 
-        match solver.check(){
+
+        let mut smt2_output = solver.to_string();
+
+        let start_time = std::time::Instant::now();
+        let result_sat = solver.check();
+        let elapsed_time = start_time.elapsed();
+
+        println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
+        let elapsed_time_str = format!(";Z3 Time: {:.2?}\n", elapsed_time);
+        smt2_output = format!("{}{}", smt2_output, elapsed_time_str);
+
+        let mut count = 0;
+        for entry in fs::read_dir(".").unwrap() {
+            let entry = entry.unwrap();
+            let file_name = entry.file_name();
+            let file_name_str = file_name.to_string_lossy();
+            if file_name_str.starts_with("output") {
+                count += 1;
+            }
+        }
+        let new_file_name = format!("output_{}.smt2", count);
+        std::fs::write(new_file_name, smt2_output).expect("Unable to write SMT2 file");
+
+        match result_sat{
             SatResult::Sat =>{
                 logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
 
@@ -1750,6 +1775,7 @@ fn update_bounds_or(map: &mut HashMap<usize, (BigInt, BigInt)>, left: HashMap<us
 
 fn update_bounds_and(map: &mut HashMap<usize, (BigInt, BigInt)>, left: HashMap<usize, (BigInt, BigInt)>, right: HashMap<usize, (BigInt, BigInt)>){
     use std::cmp::min;
+use std::fs;
     for (s, (min_l, max_l)) in left{
         map.insert(s, (min_l, max_l));
     }

@@ -135,6 +135,8 @@ impl TreeConstraints {
 
         let mut logs =  Vec::new();
         
+        println!("Checking template {}\n", self.pretty_template_name);
+        
         for s in 0..self.number_signals{
             signals.push_back(s+self.initial_signal);
         }
