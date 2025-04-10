@@ -3,6 +3,7 @@ use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
 use std::fs;
+use std::process::Command;
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
@@ -633,7 +634,7 @@ impl TemplateVerification{
         let elapsed_time = start_time.elapsed();
 
         println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
-        let elapsed_time_str = format!(";Z3 Time: {:.2?}\n", elapsed_time);
+        let elapsed_time_str = format!("(check_sat)\n;Z3 Time: {:.2?}\n", elapsed_time);
         smt2_output = format!("{}{}", smt2_output, elapsed_time_str);
 
         let mut count = 0;
@@ -647,6 +648,9 @@ impl TemplateVerification{
         }
         let new_file_name = format!("output_{}.smt2", count);
         std::fs::write(new_file_name, smt2_output).expect("Unable to write SMT2 file");
+        //Execute a command from command line
+        let output = Command::new("ffsol").arg("< output_ffsol.txt").output().expect("Failed to execute command");
+
 
         match result_sat{
             SatResult::Sat =>{
