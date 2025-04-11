@@ -3,6 +3,8 @@ use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
 use std::fs;
+use std::fs::File;
+use std::process::Stdio;
 use std::process::Command;
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
@@ -634,8 +636,9 @@ impl TemplateVerification{
         let elapsed_time = start_time.elapsed();
 
         println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
-        let elapsed_time_str = format!("(check_sat)\n;Z3 Time: {:.2?}\n", elapsed_time);
-        smt2_output = format!("{}{}", smt2_output, elapsed_time_str);
+        let prologue_str = format!("(set-logic QF_FFA)\n");
+        let elapsed_time_str = format!("(check-sat)\n;Z3 Time: {:.2?}\n", elapsed_time);
+        smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
         let mut count = 0;
         for entry in fs::read_dir(".").unwrap() {
@@ -647,12 +650,27 @@ impl TemplateVerification{
             }
         }
         let new_file_name = format!("output_{}.smt2", count);
-        std::fs::write(new_file_name, smt2_output).expect("Unable to write SMT2 file");
+        std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
         //Execute a command from command line
-        let output = Command::new("ffsol").arg("< output_ffsol.txt").output().expect("Failed to execute command");
+        let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
 
-
-        match result_sat{
+        let command = format!("< /home/miguelis/Systems/CIVER/{}",new_file_name.clone());
+        println!("{}",command);
+        let output = Command::new("ffsol")
+        .arg(command)
+        .stdin(entrada)
+        .output() // Lanza el proceso
+        .expect("Fallo al ejecutar el comando");
+    let stdout = String::from_utf8_lossy(&output.stdout);    
+    let mut result_solver = SatResult::Unknown;
+    if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
+        if ultima_linea == "unsat" { 
+		result_solver = SatResult::Unsat;
+       	} else if ultima_linea == "sat" {
+		result_solver = SatResult::Sat;
+	}
+    }
+        match result_solver{
             SatResult::Sat =>{
                 logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
 
