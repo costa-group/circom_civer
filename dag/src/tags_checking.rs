@@ -3,9 +3,15 @@ use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::fs::File;
 use std::process::Stdio;
+use regex::Regex;
 use std::process::Command;
+use std::time::Duration;
+use wait_timeout::ChildExt;
+
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
 
@@ -631,13 +637,13 @@ impl TemplateVerification{
 
         let mut smt2_output = solver.to_string();
 
-        let start_time = std::time::Instant::now();
-        let result_sat = solver.check();
-        let elapsed_time = start_time.elapsed();
+        //let start_time = std::time::Instant::now();
+        //let result_sat = solver.check();
+        //let elapsed_time = start_time.elapsed();
 
-        println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
+        //println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
         let prologue_str = format!("(set-logic QF_FFA)\n");
-        let elapsed_time_str = format!("(check-sat)\n;Z3 Time: {:.2?}\n", elapsed_time);
+        let elapsed_time_str = format!("(check-sat)\n");
         smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
         let mut count = 0;
@@ -654,13 +660,50 @@ impl TemplateVerification{
         //Execute a command from command line
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
 
-        let command = format!("< /home/miguelis/Systems/CIVER/{}",new_file_name.clone());
-        println!("{}",command);
-        let output = Command::new("ffsol")
+        let command = format!("< {} -tlimit 1",new_file_name.clone());
+//        println!("{}",command);
+/*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
         .stdin(entrada)
         .output() // Lanza el proceso
         .expect("Fallo al ejecutar el comando");
+*/
+let mut child = Command::new("../poly-eqs/smtSystem/ffsol")
+    .arg(command)
+    .stdin(entrada) // assuming `entrada` is properly set up
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("Failed to execute the command");
+        let copy_file_name = format!("{}_{}.smt2", self.template_name, count);
+        if !std::path::Path::new("smt_problems").exists() {
+            fs::create_dir_all("smt_problems").expect("Unable to create directory");
+        }
+        let new_file_path = format!("smt_problems/{}", copy_file_name);
+        fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
+// Timeout duration
+let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
+let output;
+match child.wait_timeout(timeout).expect("Failed while waiting for the process") {
+    Some(status) => {
+        // Process finished within the timeout
+        output = child
+            .wait_with_output()
+            .expect("Failed to retrieve the output of the process");
+        // You can now use `output.stdout` and `output.stderr`
+    }
+    None => {
+        // Timeout reached: kill the process
+        child.kill().expect("Failed to kill the process");
+        //child.wait().expect("Fallo al esperar el proceso tras kill");
+        //eprintln!("Timeout alcanzado. El proceso fue terminado.");
+        output = child
+            .wait_with_output()
+            .expect("Failed to obtain the output");
+    }
+}
+
+    io::stderr().write_all(&output.stderr).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);    
     let mut result_solver = SatResult::Unknown;
     if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
@@ -670,11 +713,13 @@ impl TemplateVerification{
 		result_solver = SatResult::Sat;
 	}
     }
+//     let num_calls = count_output_smt2_files(".");
+//        logs.push(format!("Number of calls to NL Solver: {}", num_calls));
         match result_solver{
             SatResult::Sat =>{
                 logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
 
-                let model = solver.get_model().unwrap();
+                /*let model = solver.get_model().unwrap();
                 for s in 0..self.number_inputs{
                     let v = model.eval(aux_signals_to_smt_rep.get(&(self.initial_signal + self.number_outputs + s)).unwrap(), true).unwrap();
                     logs.push(format!("Input signal {}: {}\n", self.initial_signal + self.number_outputs + s, v.to_string()));
@@ -686,7 +731,7 @@ impl TemplateVerification{
 
                     logs.push(format!("Output signal {}: values {} | {}\n", self.initial_signal + s, v.to_string(), v1.to_string()));
 
-                }
+                }*/
 
                 PossibleResult::FAILED
                 //}
@@ -1193,7 +1238,14 @@ pub fn insert_constraint_in_smt(
                 &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
         }
     }
-
+    //println!("a:{}",value_a);
+    //println!("b:{}",value_b);
+    //println!("c:{}",value_c);
+    let pol = value_a * value_b + value_c;
+    let c = pol._eq(&z3::ast::Int::from_u64(ctx, 0));
+    //println!("constraint:{}",c);
+    solver.assert(&c);
+    return;
 
     let a = constraint.a();
     let b = constraint.b();
@@ -1813,4 +1865,30 @@ use std::fs;
     }
 
 
+}
+
+fn count_output_smt2_files(directory: &str) -> usize {
+    // Pattern: output_ + digits + .smt2
+    let pattern = Regex::new(r"^output_\d+\.smt2$").unwrap();
+
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(_) => {
+            eprintln!("Failed to read directory: {}", directory);
+            return 0;
+        }
+    };
+
+    let mut count = 0;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            if let Some(name) = entry.file_name().to_str() {
+                if pattern.is_match(name) {
+                    count += 1;
+                }
+            }
+        }
+    }
+    count
 }
