@@ -3,8 +3,12 @@ use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
 use std::fs;
+use std::io;
+use std::io::Write;
 use std::fs::File;
 use std::process::Stdio;
+use std::time::Duration;
+use wait_timeout::ChildExt;
 use std::process::Command;
 use circom_algebra::{modular_arithmetic, algebra::{
     Constraint, ExecutedInequation}};
@@ -631,13 +635,13 @@ impl TemplateVerification{
 
         let mut smt2_output = solver.to_string();
 
-        let start_time = std::time::Instant::now();
-        let result_sat = solver.check();
-        let elapsed_time = start_time.elapsed();
+        //let start_time = std::time::Instant::now();
+        //let result_sat = solver.check();
+        //let elapsed_time = start_time.elapsed();
 
-        println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
+        //println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
         let prologue_str = format!("(set-logic QF_FFA)\n");
-        let elapsed_time_str = format!("(check-sat)\n;Z3 Time: {:.2?}\n", elapsed_time);
+        let elapsed_time_str = format!("(check-sat)\n");
         smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
         let mut count = 0;
@@ -653,14 +657,59 @@ impl TemplateVerification{
         std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
         //Execute a command from command line
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
-
-        let command = format!("< /home/miguelis/Systems/CIVER/{}",new_file_name.clone());
-        println!("{}",command);
-        let output = Command::new("ffsol")
-        .arg(command)
-        .stdin(entrada)
+        let command_p = format!("transform_smt2_to_cvc5.py");
+        let place= format!("{}",new_file_name.clone());
+        let command_python = Command::new("python")
+        .arg(command_p)
+        .arg(place)
+        .output()
+        .expect("Fallo al ejecutar el commando");
+//        println!("status: {}", command_python.status);
+//	io::stdout().write_all(&command_python.stdout).unwrap();
+	io::stderr().write_all(&command_python.stderr).unwrap();
+        let file_transformed = format!("output_{}_transformed.smt2",count);
+  //      println!("{}",command);
+/*        let output = Command::new("../cvc5/build/bin/cvc5")
+        .arg(file_transformed)
+//        .stdin(entrada)
         .output() // Lanza el proceso
         .expect("Fallo al ejecutar el comando");
+//        println!("status: {}", output.status);
+//io::stdout().write_all(&output.stdout).unwrap();
+io::stderr().write_all(&output.stderr).unwrap();
+*/
+let mut child = Command::new("../cvc5/build/bin/cvc5")
+    .arg(file_transformed)
+    .stdin(entrada) // assuming `entrada` is properly set up
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .spawn()
+    .expect("Failed to execute the command");
+
+// Timeout duration
+let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
+let output;
+match child.wait_timeout(timeout).expect("Failed while waiting for the process") {
+    Some(status) => {
+        // Process finished within the timeout
+        output = child
+            .wait_with_output()
+            .expect("Failed to retrieve the output of the process");
+        // You can now use `output.stdout` and `output.stderr`
+    }
+    None => {
+        // Timeout reached: kill the process
+        child.kill().expect("Failed to kill the process");
+        //child.wait().expect("Fallo al esperar el proceso tras kill");
+        //eprintln!("Timeout alcanzado. El proceso fue terminado.");
+        output = child
+            .wait_with_output()
+            .expect("Failed to obtain the output");
+    }
+}
+
+    io::stderr().write_all(&output.stderr).unwrap();
+    io::stdout().write_all(&output.stdout).unwrap();
     let stdout = String::from_utf8_lossy(&output.stdout);    
     let mut result_solver = SatResult::Unknown;
     if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
@@ -673,7 +722,7 @@ impl TemplateVerification{
         match result_solver{
             SatResult::Sat =>{
                 logs.push(format!("### THE TEMPLATE DOES NOT ENSURE SAFETY. FOUND COUNTEREXAMPLE USING SMT:\n"));
-
+/*
                 let model = solver.get_model().unwrap();
                 for s in 0..self.number_inputs{
                     let v = model.eval(aux_signals_to_smt_rep.get(&(self.initial_signal + self.number_outputs + s)).unwrap(), true).unwrap();
@@ -687,7 +736,7 @@ impl TemplateVerification{
                     logs.push(format!("Output signal {}: values {} | {}\n", self.initial_signal + s, v.to_string(), v1.to_string()));
 
                 }
-
+*/
                 PossibleResult::FAILED
                 //}
             },
@@ -1193,7 +1242,14 @@ pub fn insert_constraint_in_smt(
                 &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
         }
     }
-
+//    println!("a:{}",value_a);
+//    println!("b:{}",value_b);
+//    println!("c:{}",value_c);
+    let pol = value_a * value_b + value_c;
+    let c = pol._eq(&z3::ast::Int::from_u64(ctx, 0));
+//    println!("constraint:{}",c);
+    solver.assert(&c);
+    return;
 
     let a = constraint.a();
     let b = constraint.b();
