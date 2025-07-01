@@ -665,28 +665,34 @@ impl TemplateVerification{
         std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
         //Execute a command from command line
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
-        let options = if self.nola_ffsol_option  {
-            "-apply_la false".to_string()
-        } else if  self.only_simple_ffsol_option {
-            "-only_simple_deductions true".to_string()
-        } else {
-            "".to_string()
-        };
-        let command = format!("< {} -tlimit 1 {} ",new_file_name.clone(), options);
-//        println!("{}",command);
+        let mut command_args = Vec::new();
+        command_args.push("-tlimit");
+        command_args.push("5");
+
+        if self.nola_ffsol_option  {
+            command_args.push("-apply_la");
+            command_args.push("false");
+        }
+        if self.only_simple_ffsol_option {
+            command_args.push("-only_simple_deductions");
+            command_args.push("true");
+        }
+        //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
         .stdin(entrada)
         .output() // Lanza el proceso
         .expect("Fallo al ejecutar el comando");
 */
-let mut child = Command::new("../poly-eqs/smtSystem/ffsol")
-    .arg(command)
+let mut child = Command::new("/home/clara/circom/proving_unsat/poly-eqs/smtSystem/ffsol")
+    .args(command_args)
     .stdin(entrada) // assuming `entrada` is properly set up
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
     .expect("Failed to execute the command");
+
+
 let mut abbreviated_name =  self.template_name.clone();
 if let Some(start) = abbreviated_name.find('(') {
     if let Some(end) = abbreviated_name[start..].find(')') {
