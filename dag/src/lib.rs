@@ -5,6 +5,8 @@ mod r1cs_porting;
 mod sym_porting;
 mod witness_producer;
 mod tags_checking;
+use regex::Regex;
+use std::fs;
 
 use tags_checking::TemplateVerification;
 use circom_algebra::num_bigint::BigInt;
@@ -124,7 +126,7 @@ impl TreeConstraints {
     }
 
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
-        add_tags_info: bool, add_postconditions_info: bool,
+        add_tags_info: bool, add_postconditions_info: bool, nola_option: bool, only_simple_ffsol_option: bool
     ) -> (PossibleResult, PossibleResult, PossibleResult, Vec<String>){
         let mut implications: Vec<ExecutedImplication> = Vec::new();
         let mut tags_implications: Vec<ExecutedImplication> = Vec::new();
@@ -183,9 +185,13 @@ impl TreeConstraints {
             check_safety,
             add_tags_info,
             add_postconditions_info,
+            nola_option,
+            only_simple_ffsol_option,
         );
         logs.push(format!("Checking template {}\n", self.pretty_template_name));
         logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));
+//        let num_calls = count_output_smt2_files(".");
+//        logs.push(format!("Number of calls to NL Solver: {}\n", num_calls));
         if check_tags{
             logs.push(format!("Number of tagged signals to check: {}\n", self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len()));
         }
@@ -198,6 +204,10 @@ impl TreeConstraints {
         let (mut result_tags, mut result_postconditions, mut result_safety, mut logs_round) = verification.deduce();
         let mut finished_verification = result_tags.finished_verification() &&  result_postconditions.finished_verification() && result_safety.finished_verification();
         logs.append(&mut logs_round);
+
+        let num_calls = count_output_smt2_files(".");
+        logs.push(format!("Number of calls to NL Solver: {}\n", num_calls));
+
         if finished_verification{
             let duration = inicio.elapsed();    
             logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
@@ -1068,3 +1078,83 @@ pub struct SimplificationFlags {
     pub flag_old_heuristics: bool,
     pub prime : String,
 }
+
+
+fn count_output_smt2_files(directory: &str) -> usize {
+    // Pattern: output_ + digits + .smt2
+let dir_path = "./"; // Reemplaza con el directorio que desees
+
+    // Lee el contenido del directorio
+    let entries = fs::read_dir(dir_path).unwrap();
+
+    // Itera sobre las entradas del directorio
+    /*for entry in entries {
+        let entry = entry.unwrap(); // Obtiene el resultado de la entrada
+        let path = entry.path(); // Obtiene el path de la entrada
+
+        // Muestra el nombre del archivo (o directorio) si es un archivo
+        if path.is_file() {
+            println!("Archivo: {}", path.display());
+        }
+    }*/
+    let pattern = Regex::new(r"^output_\d+\.smt2$").unwrap();
+
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(_) => {
+            eprintln!("Failed to read directory: {}", directory);
+            return 0;
+        }
+    };
+
+    let mut count = 0;
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            if let Some(name) = entry.file_name().to_str() {
+                if pattern.is_match(name) {
+                    count += 1;
+                    fs::remove_file(&name);
+                }
+            }
+        }
+    }
+    count
+}
+/*
+use std::fs;
+use std::path::Path;
+use regex::Regex;
+
+fn delete_output_smt2_files(directory: &str) {
+    let pattern = Regex::new(r"^output.*\.smt2$").unwrap();
+
+    let entries = match fs::read_dir(directory) {
+        Ok(entries) => entries,
+        Err(_) => {
+            eprintln!("Failed to read directory: {}", directory);
+            return;
+        }
+    };
+
+    for entry in entries {
+        if let Ok(entry) = entry {
+            let path = entry.path();
+            if let Some(filename) = path.file_name().and_then(|f| f.to_str()) {
+                if pattern.is_match(filename) {
+                    if let Err(e) = fs::remove_file(&path) {
+                        eprintln!("Failed to delete file {:?}: {}", path, e);
+                    } else {
+                        println!("Deleted: {:?}", path);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn main() {
+    let folder = "/path/to/your/folder";
+    delete_output_smt2_files(folder);
+}
+*/

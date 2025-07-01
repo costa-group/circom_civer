@@ -41,6 +41,8 @@ pub struct Input {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub nola_ffsol_flag: bool,
+    pub onlysimple_ffsol_flag: bool,
 }
 
 
@@ -120,6 +122,8 @@ impl Input {
             check_tags: input_processing::get_flag_check_tags(&matches),
             check_postconditions: input_processing::get_flag_check_postconditions(&matches),
             check_safety: input_processing::get_flag_check_safety(&matches),
+            nola_ffsol_flag: input_processing::get_flag_nola(&matches),
+            onlysimple_ffsol_flag: input_processing::get_flag_onlysimple(&matches),
             add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             add_postconditions_info: input_processing::get_flag_add_postconditions_info(&matches),
         })
@@ -262,6 +266,13 @@ impl Input {
         self.add_postconditions_info
     }
 
+    pub fn nola_ffsol_flag(&self) -> bool {
+        self.nola_ffsol_flag
+    }
+    pub fn only_simple_ffsol_flag(&self) -> bool {
+        self.onlysimple_ffsol_flag
+    }
+
 }
 mod input_processing {
     use ansi_term::Colour;
@@ -390,6 +401,13 @@ mod input_processing {
         matches.is_present("flag_add_postconditions_info")
     }
 
+    pub fn get_flag_nola(matches: &ArgMatches) -> bool {
+        matches.is_present("nola_ffsol_option")
+    }
+
+    pub fn get_flag_onlysimple(matches: &ArgMatches) -> bool {
+        matches.is_present("onlysimple_ffsol_option")
+    }
 
 
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
@@ -624,6 +642,20 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(980)
                     .help("Indicates if CIVER adds the information given by the postconditions when proving safety"),
+            )
+            .arg(
+                Arg::with_name("nola_ffsol_option")
+                    .long("nola_ffsol")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER uses the NOLA FFsol option to generate the circuit"),
+            )
+            .arg(
+                Arg::with_name("onlysimple_ffsol_option")
+                    .long("onlysimple_ffsol")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER uses the only simple deductions FFsol option to generate the circuit"),
             )
             .arg (
                 Arg::with_name("prime")

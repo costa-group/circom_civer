@@ -29,6 +29,8 @@ pub struct ExecutionConfig {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub nola_ffsol: bool,
+    pub only_simple_ffsol: bool,
 }
 
 pub fn execute_project(
@@ -54,7 +56,9 @@ pub fn execute_project(
         check_safety: config.check_safety,
         add_tags_info: config.add_tags_info,
         add_postconditions_info: config.add_postconditions_info,
-        civer_file: config.civer_file
+        civer_file: config.civer_file,
+        nola_ffsol: config.nola_ffsol,
+        only_simple_ffsol: config.only_simple_ffsol,
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;

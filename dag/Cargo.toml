@@ -10,6 +10,8 @@ constraint_writers = { path = "../constraint_writers" }
 circom_algebra = { path = "../circom_algebra" }
 program_structure = { path = "../program_structure" }
 json = "0.12.4"
+wait-timeout = "0.2"
 num-traits = "0.2.6"
 num-bigint-dig = "0.6.0"
 z3 = {version="0.11.2", features = ["static-link-z3"]}
+regex = "1"

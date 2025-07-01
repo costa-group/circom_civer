@@ -65,6 +65,8 @@ pub struct TemplateVerification {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub nola_ffsol_option: bool,
+    pub only_simple_ffsol_option: bool,
 }
 
 impl TemplateVerification{
@@ -94,6 +96,8 @@ impl TemplateVerification{
         check_safety: bool,
         add_tags_info: bool,
         add_postconditions_info: bool,
+        nola_ffsol_option: bool,
+        only_simple_ffsol_option: bool,
     ) -> TemplateVerification {
         let mut fixed_constraints = Vec::new();
         for c in constraints{
@@ -134,6 +138,8 @@ impl TemplateVerification{
             check_safety,
             add_tags_info,
             add_postconditions_info,
+            nola_ffsol_option,
+            only_simple_ffsol_option,
         }
     }
 
@@ -659,8 +665,14 @@ impl TemplateVerification{
         std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
         //Execute a command from command line
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
-
-        let command = format!("< {} -tlimit 1",new_file_name.clone());
+        let options = if self.nola_ffsol_option  {
+            "-apply_la false".to_string()
+        } else if  self.only_simple_ffsol_option {
+            "-only_simple_deductions true".to_string()
+        } else {
+            "".to_string()
+        };
+        let command = format!("< {} -tlimit 1 {} ",new_file_name.clone(), options);
 //        println!("{}",command);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
@@ -675,12 +687,24 @@ let mut child = Command::new("../poly-eqs/smtSystem/ffsol")
     .stderr(Stdio::piped())
     .spawn()
     .expect("Failed to execute the command");
-        let copy_file_name = format!("{}_{}.smt2", self.template_name, count);
-        if !std::path::Path::new("smt_problems").exists() {
-            fs::create_dir_all("smt_problems").expect("Unable to create directory");
+let mut abbreviated_name =  self.template_name.clone();
+if let Some(start) = abbreviated_name.find('(') {
+    if let Some(end) = abbreviated_name[start..].find(')') {
+        let inside_len = end;
+        if inside_len > 30 {
+            let before = &abbreviated_name[..start + 1];
+            let inside = &abbreviated_name[start + 1..start + 1 + 30];
+            let after = &abbreviated_name[start + 1 + inside_len..];
+            abbreviated_name = format!("{}{}{}", before, inside, after)
         }
-        let new_file_path = format!("smt_problems/{}", copy_file_name);
-        fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
+    }
+} 
+let copy_file_name = format!("{}_{}.smt2", abbreviated_name, count);
+if !std::path::Path::new("smt_problems").exists() {
+    fs::create_dir_all("smt_problems").expect("Unable to create directory");
+}
+let new_file_path = format!("smt_problems/{}", copy_file_name);
+fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
 // Timeout duration
 let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
 let output;
