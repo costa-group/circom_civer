@@ -673,7 +673,7 @@ impl TemplateVerification{
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
-        command_args.push("5");
+        command_args.push("60");
 
         if self.nola_ffsol_option  {
             command_args.push("-apply_la");
