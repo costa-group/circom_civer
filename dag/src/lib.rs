@@ -126,7 +126,8 @@ impl TreeConstraints {
     }
 
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
-        add_tags_info: bool, add_postconditions_info: bool, nola_option: bool, only_simple_ffsol_option: bool
+        add_tags_info: bool, add_postconditions_info: bool, nola_option: bool, only_simple_ffsol_option: bool,
+        only_nonlinear_ffsol_option: bool, nolightwc_option: bool
     ) -> (PossibleResult, PossibleResult, PossibleResult, Vec<String>){
         let mut implications: Vec<ExecutedImplication> = Vec::new();
         let mut tags_implications: Vec<ExecutedImplication> = Vec::new();
@@ -187,6 +188,9 @@ impl TreeConstraints {
             add_postconditions_info,
             nola_option,
             only_simple_ffsol_option,
+            only_nonlinear_ffsol_option,
+            nolightwc_option
+            
         );
         logs.push(format!("Checking template {}\n", self.pretty_template_name));
         logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));

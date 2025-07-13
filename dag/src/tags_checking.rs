@@ -67,6 +67,8 @@ pub struct TemplateVerification {
     pub add_postconditions_info: bool,
     pub nola_ffsol_option: bool,
     pub only_simple_ffsol_option: bool,
+    pub only_non_linear_ffsol_option: bool,
+    pub nolightwc_ffsol_option: bool,
 }
 
 impl TemplateVerification{
@@ -98,6 +100,8 @@ impl TemplateVerification{
         add_postconditions_info: bool,
         nola_ffsol_option: bool,
         only_simple_ffsol_option: bool,
+        only_non_linear_ffsol_option: bool,
+        nolightwc_ffsol_option: bool,
     ) -> TemplateVerification {
         let mut fixed_constraints = Vec::new();
         for c in constraints{
@@ -140,6 +144,8 @@ impl TemplateVerification{
             add_postconditions_info,
             nola_ffsol_option,
             only_simple_ffsol_option,
+            only_non_linear_ffsol_option,
+            nolightwc_ffsol_option,
         }
     }
 
@@ -677,6 +683,14 @@ impl TemplateVerification{
             command_args.push("-only_simple_deductions");
             command_args.push("true");
         }
+        if self.only_non_linear_ffsol_option {
+            command_args.push("-only_non_linear");
+            command_args.push("true");
+        }
+        if self.nolightwc_ffsol_option {
+            command_args.push("-light_check_determinism");
+            command_args.push("false");
+        }
         //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
@@ -684,7 +698,7 @@ impl TemplateVerification{
         .output() // Lanza el proceso
         .expect("Fallo al ejecutar el comando");
 */
-let mut child = Command::new("/home/clara/circom/proving_unsat/poly-eqs/smtSystem/ffsol")
+let mut child = Command::new("/home/miguelis/Systems/poly-eqs/smtSystem/ffsol")
     .args(command_args)
     .stdin(entrada) // assuming `entrada` is properly set up
     .stdout(Stdio::piped())

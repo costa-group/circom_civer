@@ -43,6 +43,8 @@ pub struct Input {
     pub add_postconditions_info: bool,
     pub nola_ffsol_flag: bool,
     pub onlysimple_ffsol_flag: bool,
+    pub onlynonlinear_ffsol_flag: bool,
+    pub nolightwc_ffsol_flag: bool,
 }
 
 
@@ -124,6 +126,8 @@ impl Input {
             check_safety: input_processing::get_flag_check_safety(&matches),
             nola_ffsol_flag: input_processing::get_flag_nola(&matches),
             onlysimple_ffsol_flag: input_processing::get_flag_onlysimple(&matches),
+            nolightwc_ffsol_flag: input_processing::get_flag_nolightwc(&matches),
+            onlynonlinear_ffsol_flag: input_processing::get_flag_onlyononlinear(&matches),
             add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             add_postconditions_info: input_processing::get_flag_add_postconditions_info(&matches),
         })
@@ -273,6 +277,14 @@ impl Input {
         self.onlysimple_ffsol_flag
     }
 
+    pub fn only_non_linear_ffsol_flag(&self) -> bool {
+        self.onlynonlinear_ffsol_flag
+    }
+
+    pub fn nolightwc_ffsol_flag(&self) -> bool {
+        self.nolightwc_ffsol_flag
+    }
+
 }
 mod input_processing {
     use ansi_term::Colour;
@@ -409,6 +421,13 @@ mod input_processing {
         matches.is_present("onlysimple_ffsol_option")
     }
 
+    pub fn get_flag_nolightwc(matches: &ArgMatches) -> bool {
+        matches.is_present("nolightweigthcheck_ffsol_option")
+    }
+
+    pub fn get_flag_onlyononlinear(matches: &ArgMatches) -> bool {
+        matches.is_present("onlynonlinear_ffsol_option")
+    }
 
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
         
@@ -648,14 +667,28 @@ mod input_processing {
                     .long("nola_ffsol")
                     .takes_value(false)
                     .display_order(980)
-                    .help("Indicates if CIVER uses the NOLA FFsol option to generate the circuit"),
+                    .help("Indicates if CIVER uses the NOLA FFsol option to prove safety/postconditions"),
+            )
+            .arg(
+                Arg::with_name("nolightwc_ffsol_option")
+                    .long("nolightwc_ffsol")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER uses the no lightweight check FFsol option to prove safety/postconditions"),
             )
             .arg(
                 Arg::with_name("onlysimple_ffsol_option")
                     .long("onlysimple_ffsol")
                     .takes_value(false)
                     .display_order(980)
-                    .help("Indicates if CIVER uses the only simple deductions FFsol option to generate the circuit"),
+                    .help("Indicates if CIVER uses the only simple deductions FFsol option to prove safety/postconditions"),
+            )
+            .arg(
+                Arg::with_name("onlynonlinear_ffsol_option")
+                    .long("onlynonlinear_ffsol")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER uses the only non-linear FFsol option to prove safety/postconditions"),
             )
             .arg (
                 Arg::with_name("prime")

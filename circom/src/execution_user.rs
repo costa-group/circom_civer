@@ -31,6 +31,8 @@ pub struct ExecutionConfig {
     pub add_postconditions_info: bool,
     pub nola_ffsol: bool,
     pub only_simple_ffsol: bool,
+    pub only_non_linear_ffsol: bool,
+    pub nolightwc_ffsol: bool,
 }
 
 pub fn execute_project(
@@ -58,6 +60,8 @@ pub fn execute_project(
         add_postconditions_info: config.add_postconditions_info,
         civer_file: config.civer_file,
         nola_ffsol: config.nola_ffsol,
+        only_non_linear_ffsol: config.only_non_linear_ffsol,
+        nolightwc_ffsol: config.nolightwc_ffsol,
         only_simple_ffsol: config.only_simple_ffsol,
     };
     let custom_gates = program_archive.custom_gates;

@@ -48,6 +48,8 @@ pub struct BuildConfig {
     pub civer_file: String,
     pub nola_ffsol: bool,
     pub only_simple_ffsol: bool,
+    pub only_non_linear_ffsol: bool,
+    pub nolightwc_ffsol: bool,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -91,6 +93,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
                 &config.civer_file,
                 config.nola_ffsol,
                 config.only_simple_ffsol,
+                config.only_non_linear_ffsol,
+                config.nolightwc_ffsol,
             );
         }
     }
@@ -126,7 +130,8 @@ fn export(exe: ExecutedProgram, program: ProgramArchive, flags: FlagsExecution) 
 fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout: u64, check_tags: bool, check_postconditions: bool,
         check_safety: bool, add_tags_info: bool,add_postconditions_info: bool,
-        name: &String, nola_option: bool, only_simple_ffsol_option: bool
+        name: &String, nola_option: bool, only_simple_ffsol_option: bool,
+        only_non_linear_ffsol_option: bool, nolightwc_ffsol_option: bool
     )
     {
     use program_structure::constants::UsefulConstants;
@@ -155,7 +160,8 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     };
     let logs = check_tags_node(&tree_constraints, &mut studied_nodes, &field,
         verification_timeout, check_tags, check_postconditions,
-        check_safety, add_tags_info, add_postconditions_info,nola_option, only_simple_ffsol_option
+        check_safety, add_tags_info, add_postconditions_info,nola_option, only_simple_ffsol_option, 
+        only_non_linear_ffsol_option, nolightwc_ffsol_option
     );
     for l in logs {
         let _result =  cfile.write_all(l.as_bytes());
@@ -315,6 +321,8 @@ fn check_tags_node(
     add_postconditions_info: bool,
     nola_option: bool,
     only_simple_ffsol_option: bool,
+    only_nonlinear_ffsol_option : bool,
+    nolightwc_option: bool,
 ) -> Vec<String>{
     if !studied_nodes.contains_key(tree_constraints.pretty_template_name()){
         let mut number_tags_postconditions = tree_constraints.get_no_tags_postconditions();
@@ -324,7 +332,8 @@ fn check_tags_node(
             logs.append(&mut check_tags_node(subcomponent, studied_nodes, field,
                 verification_timeout, check_tags, check_postconditions, 
                 check_safety, add_tags_info, add_postconditions_info,
-                nola_option, only_simple_ffsol_option
+                nola_option, only_simple_ffsol_option,
+                only_nonlinear_ffsol_option, nolightwc_option
             ));
             number_tags_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.0;
             number_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.1;
@@ -341,6 +350,8 @@ fn check_tags_node(
             add_postconditions_info,
             nola_option,
             only_simple_ffsol_option,
+            only_nonlinear_ffsol_option,
+            nolightwc_option,
         );
         logs.append(&mut new_logs);
         logs.push("\n\n".to_string());
