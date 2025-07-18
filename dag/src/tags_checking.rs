@@ -1282,12 +1282,9 @@ pub fn insert_constraint_in_smt(
                 &z3::ast::Int::from_str(&ctx, &to_neg(value, field).to_string()).unwrap();
         }
     }
-    //println!("a:{}",value_a);
-    //println!("b:{}",value_b);
-    //println!("c:{}",value_c);
-    let pol = value_a * value_b + value_c;
-    let c = pol._eq(&z3::ast::Int::from_u64(ctx, 0));
-    //println!("constraint:{}",c);
+
+    let pol = value_a * value_b;
+    let c = pol._eq(&value_c);
     solver.assert(&c);
     return;
 
