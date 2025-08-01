@@ -36,7 +36,13 @@ pub enum PossibleResult{
     VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
 } impl PossibleResult {
     fn finished_verification(&self) -> bool{
-        self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
+        // Depending if fast or not, it includes the childrens when timeout
+        let fast_check = true;
+        if fast_check{
+            self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING || self == &PossibleResult::UNKNOWN
+        }else{
+            self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
+        }    
     }
     fn result_to_str(&self)-> String{
         match self{
@@ -68,6 +74,7 @@ pub struct TreeConstraints {
     number_outputs: usize,
     initial_signal: usize,
     subcomponents: LinkedList<TreeConstraints>,
+    is_custom: bool
 }
 
 impl TreeConstraints {
@@ -126,6 +133,8 @@ impl TreeConstraints {
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
         add_tags_info: bool, add_postconditions_info: bool,
     ) -> (PossibleResult, PossibleResult, PossibleResult, Vec<String>){
+        
+        
         let mut implications: Vec<ExecutedImplication> = Vec::new();
         let mut tags_implications: Vec<ExecutedImplication> = Vec::new();
 
@@ -134,6 +143,12 @@ impl TreeConstraints {
         let mut signals: LinkedList<usize> = LinkedList::new(); 
 
         let mut logs =  Vec::new();
+        logs.push(format!("Checking template {}\n", self.pretty_template_name));
+
+        if self.is_custom{
+            logs.push(format!("Not checking custom templates\n"));
+            return (PossibleResult::VERIFIED, PossibleResult::VERIFIED, PossibleResult::VERIFIED, logs);
+        }
         
         for s in 0..self.number_signals{
             signals.push_back(s+self.initial_signal);
@@ -182,7 +197,6 @@ impl TreeConstraints {
             add_tags_info,
             add_postconditions_info,
         );
-        logs.push(format!("Checking template {}\n", self.pretty_template_name));
         logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));
         if check_tags{
             logs.push(format!("Number of tagged signals to check: {}\n", self.tags_postconditions_intermediates.len() + self.tags_postconditions_outputs.len()));
