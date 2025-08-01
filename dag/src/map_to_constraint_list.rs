@@ -29,6 +29,7 @@ fn map_tree_constraints(
 
     tree_constraints.template_name = tree.dag.nodes[tree.node_id].template_name.clone();
     tree_constraints.pretty_template_name = tree.dag.nodes[tree.node_id].pretty_template_name.clone();
+    tree_constraints.is_custom = tree.dag.nodes[tree.node_id].is_custom_gate;
     tree_constraints.number_signals = tree.signals.len();
     tree_constraints.number_inputs = tree.dag.nodes[tree.node_id].inputs_length;
     tree_constraints.number_outputs = tree.dag.nodes[tree.node_id].outputs_length;
