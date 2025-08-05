@@ -136,7 +136,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
-name = "circom"
+name = "circom_algebra"
+version = "2.1.4"
+dependencies = [
+ "constant_tracking",
+ "num-bigint-dig",
+ "num-traits",
+]
+
+[[package]]
+name = "civer_circom"
 version = "2.1.6"
 dependencies = [
  "ansi_term",
@@ -150,15 +159,6 @@ dependencies = [
  "program_structure",
  "type_analysis",
  "wast",
-]
-
-[[package]]
-name = "circom_algebra"
-version = "2.1.4"
-dependencies = [
- "constant_tracking",
- "num-bigint-dig",
- "num-traits",
 ]
 
 [[package]]

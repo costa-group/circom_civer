@@ -74,21 +74,21 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
     }
     if config.check_tags ||config.check_postconditions || config.check_safety{
         if !config.civer{
-            eprintln!("{}", Colour::Red.paint("Missing flag --civer: In order to verify the specification add the flag and the file with the tag specification"));
-        } else{
-            let tree_constraints = dag.map_to_constraint_tree();
-            check_tags(
-                tree_constraints,
-                &config.prime, 
-                config.verification_timeout, 
-                config.check_tags, 
-                config.check_postconditions, 
-                config.check_safety, 
-                config.add_tags_info, 
-                config.add_postconditions_info,
-                &config.civer_file
-            );
+            eprintln!("{}", Colour::Yellow.paint("Not including tag specifications: in case you want to add extra tag specifications, use the flag --civer followed by the name of the file including the specifications (example: --civer tags.circom)"));
         }
+        let tree_constraints = dag.map_to_constraint_tree();
+        check_tags(
+            tree_constraints,
+            &config.prime, 
+            config.verification_timeout, 
+            config.check_tags, 
+            config.check_postconditions, 
+            config.check_safety, 
+            config.add_tags_info, 
+            config.add_postconditions_info,
+            &config.civer_file
+        );
+        
     }
     if config.flag_f {
         sync_dag_and_vcp(&mut vcp, &mut dag);
