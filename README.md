@@ -77,7 +77,7 @@ Components that do not satisfy weak safety:
 CIVER lists all the components that has not been able to verify.
 
 ## Tag Verification
-As explained in [Tag Section](), the circom compiler does not check whether the semantics associated to the tag is satisfied by the tagged signals, since it only makes syntactic checks. In order to formally verify that the signals meet such semantics, the programmer should provide a formal definition of the tag semantics. In the CIVER extension of circom, the semantics of a tag is defined as follows:
+As explained in the [Tags section](https://docs.circom.io/circom-language/tags/) of the official documentation, the circom compiler does not check whether the semantics associated to the tag is satisfied by the tagged signals, since it only makes syntactic checks. In order to formally verify that the signals meet such semantics, the programmer should provide a formal definition of the tag semantics. In the CIVER extension of circom, the semantics of a tag is defined as follows:
 
 ```text  
 spec_tags {tag_name} signal_name{
@@ -116,6 +116,8 @@ In order to avoid conflicts when using the official circom compiler, all tag spe
 Let us see how to use it with an example. Suppose we have included the specification of the tag ```maxbit``` in the file `tags_specification.circom` and we want to verify the next circuit called `circuit_tags.circom`:
 
 ```text
+include "bitify.circom";
+
 template AddMaxbitTag(n) {
     signal input in;
     signal output {maxbit} out;
@@ -145,10 +147,14 @@ and we obtain the next output:
 We can add preconditions and postconditions to a template as a (partial) specification of its behavior using quantifier-free formulas over the signals of the circuit. The current instructions to provide preconditions and postconditions are `spec_precondition Exp` and `spec_postcondition Exp`, respectively. 
 Then, CIVER tries to prove that the postconditions are satisfied by the circuit assuming the preconditions are satisfied. 
 
+Optionally,  we can include the parameter `--civer` with the file `tags_specification.circom` to use the tag semantics to help the SMT solver to prove the postconditions and the weak-safety property.
+
 For instance, let us consider the next circuit, called `conditions.circom` (where we have provided a postcondition):
 
 ```text
-template LessThan(n) {
+include "bitify.circom";
+
+template MyLessThan(n) {
     assert(n <= 252);
     signal input {maxbit} in[2];
     signal output {binary} out;
@@ -163,21 +169,31 @@ template LessThan(n) {
 
     spec_postcondition out == (in[0] < in[1]);
 }
+
+template Main(n){
+   signal input in1, in2;
+   signal {maxbit} in[2];
+   in.maxbit = n;
+   in <== [in1, in2];
+   signal output {binary} out <== MyLessThan(n)(in);
+}
+
+component main = Main(16);
+
+
 ```
 If we execute the command 
 
-```civer_circom conditions.circom --check_postconditions```
+```civer_circom conditions.circom --check_postconditions --civer tags_specification.circom```
 
 we obtain the next output:
 
 ```text
 -> All postconditions were verified :)
-  * Number of verified components (postconditions): 1
+  * Number of verified components (postconditions): 3
   * Number of failed components (postconditions): 0
   * Number of timeout components (postconditions): 0
 ```
-
-Optionally,  we can include the parameter `--civer` with the file `tags_specification.circom` to use the tag semantics to help the SMT solver to prove the postconditions and the weak-safety property.
 
 When dealing with cryptographic structures, some properties are often assumed by the programmers. CIVER usually needs these properties to reason about the different properties of the circuit. In this case, we can use the instruction `spec_fact Exp` to claim a fact that CIVER interprets as true. 
 
