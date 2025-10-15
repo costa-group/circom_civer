@@ -11,6 +11,8 @@ use circom_algebra::{modular_arithmetic, algebra::{
         use z3::ast::Ast;
         use z3::*;
 
+const MAX_CONSTRAINTS:usize = 100000;
+
 fn is_positive(a: &BigInt, field: &BigInt) -> bool{
     a <= &(field / BigInt::from(2))
 }
@@ -190,7 +192,9 @@ impl TemplateVerification{
 
     pub fn deduce(&mut self)-> (PossibleResult, PossibleResult, PossibleResult, Vec<String>) {        //self.print_pretty_template_verification();
         
-        self.deduce_round();
+        if self.constraints.len() <= MAX_CONSTRAINTS{
+            self.deduce_round();
+        }
 
         let mut logs = Vec::new();
 
@@ -199,7 +203,11 @@ impl TemplateVerification{
                 logs.push(format!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN TAGGED OUTPUTS\n"));
                 PossibleResult::NOTHING
             } else{
-                self.try_prove_tags(&mut logs)
+                if self.constraints.len() <= MAX_CONSTRAINTS{
+                    self.try_prove_tags(&mut logs)
+                } else{
+                    PossibleResult::TOO_BIG
+                }
             }
         } else{
             PossibleResult::NOSTUDIED
@@ -209,13 +217,21 @@ impl TemplateVerification{
                 logs.push(format!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN POSTCONDITIONS\n"));
                 PossibleResult::NOTHING
             } else{
-                self.try_prove_postconditions(&mut logs)
+                if self.constraints.len() <= MAX_CONSTRAINTS{
+                    self.try_prove_postconditions(&mut logs)
+                } else{
+                    PossibleResult::TOO_BIG
+                }
             }
         } else{
             PossibleResult::NOSTUDIED
         };
         let result_safety = if self.check_safety{
-            self.try_prove_safety(&mut logs)
+            if self.constraints.len() <= MAX_CONSTRAINTS{
+                    self.try_prove_safety(&mut logs)
+                } else{
+                    PossibleResult::TOO_BIG
+                }
         } else{
             PossibleResult::NOSTUDIED
         };

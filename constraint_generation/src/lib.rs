@@ -171,6 +171,11 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
                 	//println!("TAGS VERIFICATION UNKNOWN  || ");
                 	tags_timeout.push(component);
                 }
+
+                PossibleResult::TOO_BIG => {
+                	//println!("TAGS VERIFICATION UNKNOWN  || ");
+                	tags_timeout.push(component);
+                }
                 _ => {
                     //print!("TAGS VERIFIED || ");
                     tags_verified.push(component);
@@ -187,6 +192,10 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
                 	//println!("POSTCONDITIONS VERIFICATION UNKNOWN  || ");
                 	post_timeout.push(component);
                 }
+                PossibleResult::TOO_BIG => {
+                	//println!("POSTCONDITIONS VERIFICATION UNKNOWN  || ");
+                	post_timeout.push(component);
+                }
                 _ => {
                     //print!("POSTCONDITIONS VERIFIED || ");
                     post_verified.push(component);
@@ -200,6 +209,10 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
                     //println!("WEAK SAFETY VERIFICATION FAILED || ");
                 },
                 PossibleResult::UNKNOWN => {
+                    safety_timeout.push(component);
+                    //println!("WEAK SAFETY VERIFICATION UNKNOWN  || ");
+                },
+                PossibleResult::TOO_BIG => {
                     safety_timeout.push(component);
                     //println!("WEAK SAFETY VERIFICATION UNKNOWN  || ");
                 },

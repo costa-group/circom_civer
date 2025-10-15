@@ -33,19 +33,20 @@ pub struct ExecutedImplication{
 
 #[derive(PartialEq, Eq)] 
 pub enum PossibleResult{
-    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
+    VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING, TOO_BIG
 } impl PossibleResult {
     fn finished_verification(&self) -> bool{
         // Depending if fast or not, it includes the childrens when timeout
         let fast_check = true;
         if fast_check{
-            self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING || self == &PossibleResult::UNKNOWN
+            self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING || self == &PossibleResult::UNKNOWN || self == &PossibleResult::TOO_BIG
         }else{
             self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
         }    
     }
     fn result_to_str(&self)-> String{
         match self{
+            &PossibleResult::TOO_BIG => {format!("UNKNOWN -> NUMBER OF CONSTRAINTS IS TOO BIG TO ANALYSE\n")}
             &PossibleResult::FAILED => {format!("FAILED -> FOUND COUNTEREXAMPLE\n")}
             &PossibleResult::UNKNOWN => {format!("UNKNOWN -> VERIFICATION TIMEOUT\n")}
             &PossibleResult::NOTHING => {format!("NOTHING TO VERIFY\n")}
