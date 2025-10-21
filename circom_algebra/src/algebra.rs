@@ -228,7 +228,7 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         }
         debug_assert!(ArithmeticExpression::valid_hashmap_for_expression(coefficients));
     }
-    fn divide_coefficients_by_constant(
+    pub fn divide_coefficients_by_constant(
         constant: &BigInt,
         coefficients: &mut HashMap<C, BigInt>,
         field: &BigInt,
@@ -1009,7 +1009,7 @@ where
 }
 
 impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
-    fn new(a: HashMap<C, BigInt>, b: HashMap<C, BigInt>, c: HashMap<C, BigInt>) -> Constraint<C> {
+    pub fn new(a: HashMap<C, BigInt>, b: HashMap<C, BigInt>, c: HashMap<C, BigInt>) -> Constraint<C> {
         Constraint { a, b, c }
     }
 
@@ -1191,6 +1191,13 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
             ArithmeticExpression::Linear { coefficients: self.b },
             ArithmeticExpression::Linear { coefficients: self.c }
         )
+    }
+
+    pub fn print_pretty_constraint(&self) {
+        println!("--- Printing constraint");
+        println!("A: {}", ArithmeticExpression::string_from_coefficients(self.a()));
+        println!("B: {}", ArithmeticExpression::string_from_coefficients(self.b()));
+        println!("C: {}", ArithmeticExpression::string_from_coefficients(self.c()));
     }
 
 }

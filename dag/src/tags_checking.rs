@@ -194,6 +194,8 @@ impl TemplateVerification{
         
         if self.constraints.len() <= MAX_CONSTRAINTS{
             self.deduce_round();
+            // to normalize the constraints and get the version with the minimal coefs
+            self.normalize();
         }
 
         let mut logs = Vec::new();
@@ -237,6 +239,15 @@ impl TemplateVerification{
         };
 
         (result_tags, result_post, result_safety, logs)
+    }
+
+    // normalizes the constraints choosing the smaller coefficients
+    pub fn normalize(&mut self){
+        let old_constraints = std::mem::take(&mut self.constraints);
+        for c in old_constraints{
+            let new_c = normalize_constraint(c, &self.deductions, &self.field);
+            self.constraints.push(new_c);
+        }
     }
 
     // returns the signals where it was able to find new bounds
@@ -636,7 +647,6 @@ impl TemplateVerification{
             let s_2 = aux_signals_to_smt_rep_aux.get(&(self.initial_signal + s)).unwrap();
             all_outputs_equal &= s_1._eq(s_2);
         } 
-
         solver.assert(&!all_outputs_equal);
 
         match solver.check(){
@@ -1781,4 +1791,71 @@ fn update_bounds_and(map: &mut HashMap<usize, (BigInt, BigInt)>, left: HashMap<u
     }
 
 
+}
+
+
+pub fn compute_upper_lower_bounds(c: &Constraint<usize>, bounds: &HashMap<usize, ExecutedInequation<usize>>, field: &BigInt) -> (BigInt, BigInt) {
+    let a = c.a();
+    let b = c.b();
+    let c = c.c();
+    
+    
+    let (lower_limit_a, upper_limit_a) = compute_bounds_linear_expression_strict(bounds, &a, field);
+    let (lower_limit_b, upper_limit_b) = compute_bounds_linear_expression_strict(bounds, &b, field);
+
+    let (lower_limit_ab, upper_limit_ab) = compute_bounds_product(
+        &lower_limit_a, 
+        &upper_limit_a, 
+        &lower_limit_b, 
+        &upper_limit_b
+    );
+
+ 
+    let (lower_limit_c, upper_limit_c) = compute_bounds_linear_expression_strict(bounds, &c, field);
+    
+    (&lower_limit_c - &upper_limit_ab, &upper_limit_c - &lower_limit_ab) // lower and upper bounds
+
+}  
+
+
+pub fn normalize_constraint(c: Constraint<usize>, bounds: &HashMap<usize, ExecutedInequation<usize>>, field: &BigInt) -> Constraint<usize>{
+    // to consider all possible normalizations
+    use circom_algebra::algebra::ArithmeticExpression;
+    let c_elements = c.c();
+    //println!("Normalizing constraint");
+    //c.print_pretty_constraint();    
+    let (initial_lower, initial_upper) = compute_upper_lower_bounds(&c, bounds, field);
+    let mut best_difference = initial_upper - initial_lower;
+    let mut best_c = c.clone();
+    
+    // try to normalize using all elements in C
+    for (_signal, coef) in c_elements{
+        // divide by the coef to get the new constraint
+        let mut new_c_a = c.a().clone();
+        let new_c_b = c.b().clone();
+        let mut new_c_c = c.c().clone();
+
+        ArithmeticExpression::divide_coefficients_by_constant(
+                coef,
+            &mut new_c_a,
+                field,
+            );
+        ArithmeticExpression::divide_coefficients_by_constant(
+                coef,
+            &mut new_c_c,
+                field,
+            );
+        
+        let new_c = Constraint::new(new_c_a, new_c_b, new_c_c);
+        let (new_lower, new_upper) = compute_upper_lower_bounds(&new_c, bounds, field);
+        let new_dif = new_upper - new_lower;
+        if new_dif < best_difference{
+            best_difference = new_dif;
+            best_c = new_c.clone();
+        }
+    }
+    //println!("Chosen representative");
+    //best_c.print_pretty_constraint();    
+
+    best_c
 }
