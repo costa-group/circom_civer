@@ -195,7 +195,7 @@ impl TemplateVerification{
         if self.constraints.len() <= MAX_CONSTRAINTS{
             self.deduce_round();
             // to normalize the constraints and get the version with the minimal coefs
-            self.normalize();
+            //self.normalize();
         }
 
         let mut logs = Vec::new();

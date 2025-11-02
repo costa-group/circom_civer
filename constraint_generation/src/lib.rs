@@ -153,6 +153,16 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout, check_tags, check_postconditions,
         check_safety, add_tags_info, add_postconditions_info
     );
+
+    let mut number_constraints = HashMap::new();
+    let mut total_cons  = 0;
+    let mut total_verified = 0;
+    if check_safety{
+        count_constraints_node(&tree_constraints, &mut number_constraints);
+        (total_cons, total_verified) = compute_percentage_verified_constraints(&studied_nodes, &number_constraints);
+
+    }
+
     for l in logs {
         let _result =  cfile.write_all(l.as_bytes());
     }
@@ -303,6 +313,10 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         println!("  * Number of verified components (weak-safety): {}", safety_verified.len());
         println!("  * Number of failed components (weak-safety): {}", safety_failed.len());
         println!("  * Number of timeout components (weak-safety): {}", safety_timeout.len());
+        println!("  * Percentage of verified constraints: {} - ({} / {})", (total_verified as f64 / total_cons as f64) * 100.0, total_verified, total_cons);
+
+        
+        
         println!("\n");
 
     }
@@ -311,6 +325,24 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     println!("--------------------------------------------\n");
 
 }
+
+fn count_constraints_node(
+    tree_constraints: &TreeConstraints,
+    number_constraints: &mut HashMap<String, usize>,
+){
+    let node_constraints = tree_constraints.constraints().len();
+    let node_name = tree_constraints.pretty_template_name();
+    if number_constraints.contains_key(node_name){
+        let value = number_constraints.get_mut(node_name).unwrap();
+        *value += node_constraints;
+    } else{
+        number_constraints.insert(node_name.clone(), node_constraints);
+    }
+    for subcomponent in tree_constraints.subcomponents(){
+        count_constraints_node(subcomponent, number_constraints);
+    }
+}
+
 
 fn check_tags_node(
     tree_constraints: &TreeConstraints, 
@@ -354,6 +386,22 @@ fn check_tags_node(
     } else{
         Vec::new()
     }
+}
+
+fn compute_percentage_verified_constraints(
+    studied_nodes: & HashMap<String, ((usize, usize), (PossibleResult, PossibleResult, PossibleResult))>, 
+    number_constraints: & HashMap<String, usize>,
+) -> (usize, usize){
+    let mut total_cons = 0;
+    let mut verified_cons = 0;
+    for (name, n_cons) in number_constraints{
+        let (_, (_, _, result)) = studied_nodes.get(name).unwrap();
+        total_cons += n_cons;
+        if *result == PossibleResult::VERIFIED{
+            verified_cons += n_cons;
+        }
+    }
+    (total_cons, verified_cons)
 }
 
 fn sync_dag_and_vcp(vcp: &mut VCP, dag: &mut DAG) {
