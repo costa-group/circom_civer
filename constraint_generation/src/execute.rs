@@ -578,11 +578,16 @@ fn execute_expression(
         ArrayInLine { meta, values, .. } => {
             let mut arithmetic_slice_array = Vec::new();
             let mut specification_slice_array = Vec::new();
+            let mut is_spec = true;
             for value in values.iter() {
                 let f_value = execute_expression(value, program_archive, runtime, flags)?;
                 let (slice_value, specification_value) = safe_unwrap_to_arithmetic_slice_specifications(f_value, line!());
                 arithmetic_slice_array.push(slice_value);
-                specification_slice_array.push(specification_value)
+                if specification_value.is_some(){
+                    specification_slice_array.push(specification_value.unwrap());
+                } else{
+                    is_spec = false;
+                }
             }
             debug_assert!(!arithmetic_slice_array.is_empty());
 
@@ -607,21 +612,29 @@ fn execute_expression(
                     &mut runtime.runtime_errors,
                     &runtime.call_trace,
                 )?;
-                let memory_spec_insert_result = ExpressionSlice::insert_values(
+                if is_spec{
+                    let memory_spec_insert_result = ExpressionSlice::insert_values(
                     &mut array_slice_spec,
                     &[row],
                     &specification_slice_array[row],
                     false
-                );
-                treat_result_with_memory_error_void(
+                    );
+                    treat_result_with_memory_error_void(
                     memory_spec_insert_result,
-                    meta,
-                    &mut runtime.runtime_errors,
-                    &runtime.call_trace,
-                )?;
+                        meta,
+                        &mut runtime.runtime_errors,
+                        &runtime.call_trace,
+                    )?;
+                }
+
                 row += 1;
             }
-            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars: Option::Some(array_slice_spec),..FoldedValue::default() }
+            let spec_vars = if is_spec{
+                Some(array_slice_spec)
+            } else{
+                None
+            };
+            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars,..FoldedValue::default() }
         }
         UniformArray { meta, value, dimension, .. } => {
             let f_dimension = execute_expression(dimension, program_archive, runtime, flags)?;
@@ -657,27 +670,34 @@ fn execute_expression(
                     &mut runtime.runtime_errors,
                     &runtime.call_trace,
                 )?;
-
-                let memory_insert_result_spec = ExpressionSlice::insert_values(
+                if specification_value.is_some(){
+                    let memory_insert_result_spec = ExpressionSlice::insert_values(
                     &mut array_slice_specifications,
                     &[row],
-                    &specification_value,
+                    &specification_value.as_ref().unwrap(),
                     false
-                );
-                treat_result_with_memory_error_void(
+                    );
+                    treat_result_with_memory_error_void(
                     memory_insert_result_spec,
-                    meta,
-                    &mut runtime.runtime_errors,
-                    &runtime.call_trace,
-                )?;
+                        meta,
+                        &mut runtime.runtime_errors,
+                        &runtime.call_trace,
+                    )?;
+                }
 
                 row += 1;
             }
-            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars: Option::Some(array_slice_specifications), ..FoldedValue::default() }
+            let spec_vars = if specification_value.is_some(){
+                Some(array_slice_specifications)
+            } else{
+                None
+            };
+            FoldedValue { arithmetic_slice: Option::Some(array_slice), spec_vars: spec_vars, ..FoldedValue::default() }
         }
         InfixOp { meta, lhe, infix_op, rhe, .. } => {
             let l_fold = execute_expression(lhe, program_archive, runtime, flags)?;
             let r_fold = execute_expression(rhe, program_archive, runtime, flags)?;
+
             let (l_value, l_spec) = safe_unwrap_to_single_arithmetic_expression_specification(l_fold, line!());
             let (r_value, r_spec) = safe_unwrap_to_single_arithmetic_expression_specification(r_fold, line!());
             
@@ -2532,12 +2552,22 @@ fn safe_unwrap_to_arithmetic_slice(folded_value: FoldedValue, line: u32) -> AExp
 
 fn safe_unwrap_to_single_arithmetic_expression_specification(folded_value: FoldedValue, line: u32) -> (AExpr, Option<Expression>) {
     let (slice_result_arith, slice_result_spec) = safe_unwrap_to_arithmetic_slice_specifications(folded_value, line);
-    (safe_unwrap_to_single(slice_result_arith, line), safe_unwrap_to_single(slice_result_spec, line))
+    if slice_result_spec.is_some(){
+            (safe_unwrap_to_single(slice_result_arith, line), safe_unwrap_to_single(slice_result_spec.unwrap(), line))
+
+    } else{
+            (safe_unwrap_to_single(slice_result_arith, line), None)
+    }
 
 }
-fn safe_unwrap_to_arithmetic_slice_specifications(folded_value: FoldedValue, line: u32) -> (AExpressionSlice, ExpressionSlice){
+fn safe_unwrap_to_arithmetic_slice_specifications(folded_value: FoldedValue, line: u32) -> (AExpressionSlice, Option<ExpressionSlice>){
     debug_assert!(FoldedValue::valid_arithmetic_slice(&folded_value), "Caused by call at {}", line);
-    (folded_value.arithmetic_slice.unwrap(), folded_value.spec_vars.unwrap())
+    let value_spec = if folded_value.spec_vars.is_some(){
+        Some(folded_value.spec_vars.unwrap())
+    } else{
+        None
+    };
+    (folded_value.arithmetic_slice.unwrap(), value_spec)
 }
 
 fn safe_unwrap_to_valid_node_pointer(folded_value: FoldedValue, line: u32) -> (NodePointer, bool) {
