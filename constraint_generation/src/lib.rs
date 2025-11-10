@@ -23,7 +23,7 @@ use program_structure::file_definition::FileID;
 use program_structure::program_archive::ProgramArchive;
 use std::rc::Rc;
 use num_bigint_dig::BigInt;
-use std::collections::HashMap;
+use std::collections::{HashMap, BTreeMap};
 use std::fs::File;
 use std::io::Write;
 
@@ -158,9 +158,16 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
 
     let mut number_constraints = HashMap::new();
     let mut number_components = HashMap::new();
-    count_constraints_node(&tree_constraints, &mut number_constraints, &mut number_components);
+    let mut init_constraint_to_node =  BTreeMap::new();
+    let mut init_c = 0;
+    count_constraints_node(&tree_constraints, &mut number_constraints, &mut number_components, &mut init_constraint_to_node, &mut init_c);
 
     println!("Components appereances: {:?}", number_components);
+    //println!("Initial constraint to component: {:?}", init_constraint_to_node);
+    std::fs::write(
+        "initial_constraints_components.json",
+        serde_json::to_string_pretty(&init_constraint_to_node).unwrap(),
+    );
 
     let mut total_cons  = 0;
     let mut total_verified = 0;
@@ -341,9 +348,13 @@ fn count_constraints_node(
     tree_constraints: &TreeConstraints,
     number_constraints: &mut HashMap<String, usize>,
     number_components: &mut HashMap<String, usize>,
+    init_constraint_to_node: &mut BTreeMap<usize, String>,
+    init_c: &mut usize,
 ){
     let node_constraints = tree_constraints.constraints().len();
     let node_name = tree_constraints.pretty_template_name();
+    init_constraint_to_node.insert(*init_c, node_name.clone());
+
     if number_constraints.contains_key(node_name){
         let value = number_constraints.get_mut(node_name).unwrap();
         *value += node_constraints;
@@ -353,8 +364,9 @@ fn count_constraints_node(
         number_constraints.insert(node_name.clone(), node_constraints);
         number_components.insert(node_name.clone(), 1);
     }
+    *init_c += node_constraints;
     for subcomponent in tree_constraints.subcomponents(){
-        count_constraints_node(subcomponent, number_constraints, number_components);
+        count_constraints_node(subcomponent, number_constraints, number_components, init_constraint_to_node, init_c);
     }
 }
 
