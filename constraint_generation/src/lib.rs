@@ -72,7 +72,9 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
     if config.inspect_constraints {
         Report::print_reports(&warnings, &files);
     }
-    if config.check_tags ||config.check_postconditions || config.check_safety{
+
+    let always_check = true;
+    if config.check_tags ||config.check_postconditions || config.check_safety || always_check{
         if !config.civer{
             eprintln!("{}", Colour::Yellow.paint("Not including tag specifications: in case you want to add extra tag specifications, use the flag --civer followed by the name of the file including the specifications (example: --civer tags.circom)"));
         }
@@ -155,12 +157,20 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     );
 
     let mut number_constraints = HashMap::new();
+    let mut number_components = HashMap::new();
+    count_constraints_node(&tree_constraints, &mut number_constraints, &mut number_components);
+
+    println!("Components appereances: {:?}", number_components);
+
     let mut total_cons  = 0;
     let mut total_verified = 0;
-    if check_safety{
-        count_constraints_node(&tree_constraints, &mut number_constraints);
-        (total_cons, total_verified) = compute_percentage_verified_constraints(&studied_nodes, &number_constraints);
 
+    let mut total_comps  = 0;
+    let mut total_comps_verified = 0;
+
+    if check_safety{
+        (total_cons, total_verified) = compute_percentage_verified(&studied_nodes, &number_constraints);
+        (total_comps, total_comps_verified) = compute_percentage_verified(&studied_nodes, &number_components);
     }
 
     for l in logs {
@@ -314,6 +324,7 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         println!("  * Number of failed components (weak-safety): {}", safety_failed.len());
         println!("  * Number of timeout components (weak-safety): {}", safety_timeout.len());
         println!("  * Percentage of verified constraints: {} - ({} / {})", (total_verified as f64 / total_cons as f64) * 100.0, total_verified, total_cons);
+        println!("  * Percentage of verified components: {} - ({} / {})", (total_comps_verified as f64 / total_comps as f64) * 100.0, total_comps_verified, total_comps);
 
         
         
@@ -329,17 +340,21 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
 fn count_constraints_node(
     tree_constraints: &TreeConstraints,
     number_constraints: &mut HashMap<String, usize>,
+    number_components: &mut HashMap<String, usize>,
 ){
     let node_constraints = tree_constraints.constraints().len();
     let node_name = tree_constraints.pretty_template_name();
     if number_constraints.contains_key(node_name){
         let value = number_constraints.get_mut(node_name).unwrap();
         *value += node_constraints;
+        let number_components = number_components.get_mut(node_name).unwrap();
+        *number_components += 1;
     } else{
         number_constraints.insert(node_name.clone(), node_constraints);
+        number_components.insert(node_name.clone(), 1);
     }
     for subcomponent in tree_constraints.subcomponents(){
-        count_constraints_node(subcomponent, number_constraints);
+        count_constraints_node(subcomponent, number_constraints, number_components);
     }
 }
 
@@ -388,7 +403,7 @@ fn check_tags_node(
     }
 }
 
-fn compute_percentage_verified_constraints(
+fn compute_percentage_verified(
     studied_nodes: & HashMap<String, ((usize, usize), (PossibleResult, PossibleResult, PossibleResult))>, 
     number_constraints: & HashMap<String, usize>,
 ) -> (usize, usize){
@@ -403,6 +418,7 @@ fn compute_percentage_verified_constraints(
     }
     (total_cons, verified_cons)
 }
+
 
 fn sync_dag_and_vcp(vcp: &mut VCP, dag: &mut DAG) {
     let witness = Rc::new(DAG::produce_witness(dag));
