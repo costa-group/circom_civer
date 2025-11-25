@@ -695,26 +695,22 @@ impl TemplateVerification{
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
-        command_args.push("60");
-        println!("Cambiar timeout");
+        command_args.push("300");
+        command_args.push("-success");
+        command_args.push("false");
+        command_args.push("-light_check_determinism");
+        command_args.push("1");
+        command_args.push("-apply_la");
+        command_args.push("0");
+        command_args.push("-linear_solver");
+        command_args.push("1");
+        command_args.push("-simple_deductions");
+        command_args.push("1");
         command_args.push("-complete_deductions");
         command_args.push("0");
-        if self.nola_ffsol_option  {
-            command_args.push("-apply_la");
-            command_args.push("false");
-        }
-        if self.only_simple_ffsol_option {
-            command_args.push("-only_simple_deductions");
-            command_args.push("true");
-        }
-        if self.only_non_linear_ffsol_option {
-            command_args.push("-only_non_linear");
-            command_args.push("true");
-        }
-        if self.nolightwc_ffsol_option {
-            command_args.push("-light_check_determinism");
-            command_args.push("false");
-        }
+        command_args.push("-complete_non_overflowing_deductions");
+        command_args.push("0");
+    
         //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
