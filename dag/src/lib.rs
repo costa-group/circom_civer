@@ -125,6 +125,10 @@ impl TreeConstraints {
         }*/
     }
 
+    fn count_number_of_nonlinear_constraints(&self, constraints : &Vec<Constraint> ) -> usize {
+        constraints.iter().filter(|c| !c.a().is_empty() && !c.b().is_empty()).count()
+    }
+
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
         add_tags_info: bool, add_postconditions_info: bool, nola_option: bool, only_simple_ffsol_option: bool,
         only_nonlinear_ffsol_option: bool, nolightwc_option: bool
@@ -216,7 +220,9 @@ impl TreeConstraints {
             let duration = inicio.elapsed();    
             logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
             logs.push(format!("     NUMBER OF ROUNDS: 0\n\n"));
-            logs.push(format!("******** VERIFICATION RESULTS ********\n"));
+            logs.push(format!("Number of constraints in template: {}\n", verification.constraints.len()));
+            logs.push(format!("Number of nonlinear constraints in template: {}\n", self.count_number_of_nonlinear_constraints(&verification.constraints)));
+	    logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
                 logs.push(format!("-----> TAGS CHECKING: "));
                 logs.push(result_tags.result_to_str());
@@ -288,7 +294,9 @@ impl TreeConstraints {
             let duration = inicio.elapsed();    
             logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
             logs.push(format!("     NUMBER OF ROUNDS: {}\n\n ", n_rounds));
-            logs.push(format!("******** VERIFICATION RESULTS ********\n"));
+            logs.push(format!("Number of constraints in template: {}\n", verification.constraints.len()));
+            logs.push(format!("Number of nonlinear constraints in template: {}\n", self.count_number_of_nonlinear_constraints(&verification.constraints)));
+	    logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
                 logs.push(format!("-----> TAGS CHECKING: "));
                 logs.push(result_tags.result_to_str());
@@ -307,6 +315,8 @@ impl TreeConstraints {
             let duration = inicio.elapsed();  
             logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    
             logs.push(format!("     NUMBER OF ROUNDS: 0  \n\n"));
+            logs.push(format!("Number of constraints in template: {}\n", verification.constraints.len()));
+            logs.push(format!("Number of nonlinear constraints in template: {}\n", self.count_number_of_nonlinear_constraints(&verification.constraints)));
             logs.push(format!("******** VERIFICATION RESULTS ********\n"));
             if check_tags{
                 logs.push(format!("-----> TAGS CHECKING: "));

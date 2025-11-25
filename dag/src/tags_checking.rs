@@ -352,6 +352,12 @@ impl TemplateVerification{
         }
 
         solver.assert(&!value_postconditions);
+        
+        let smt2_output = solver.to_string();
+
+        let new_file_name = format!("output_postconditions_{}.smt2",0);
+        std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
+       
 
         match solver.check(){
             SatResult::Sat =>{
@@ -459,6 +465,22 @@ impl TemplateVerification{
 
 
         solver.assert(&!value_postconditions);
+
+        let smt2_output = solver.to_string();
+        
+        let count = fs::read_dir(".").unwrap()
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().is_file()
+                && e.path()
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("output_postc"))
+                    .unwrap_or(false)
+        })
+        .count();
+        let new_file_name = format!("output_postconditions_{}.smt2",count);
+        std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
 
         match solver.check(){
             SatResult::Sat =>{
@@ -674,7 +696,9 @@ impl TemplateVerification{
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
         command_args.push("60");
-
+        println!("Cambiar timeout");
+        command_args.push("-complete_deductions");
+        command_args.push("0");
         if self.nola_ffsol_option  {
             command_args.push("-apply_la");
             command_args.push("false");
