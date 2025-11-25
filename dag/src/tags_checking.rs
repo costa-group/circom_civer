@@ -580,7 +580,7 @@ impl TemplateVerification{
             i = i + 1;
         }
 
-        /*apply_deduction_rule_homologues(
+/*        apply_deduction_rule_homologues(
             &self.constraints, 
             &ctx, 
             &solver, 
@@ -590,7 +590,7 @@ impl TemplateVerification{
             &self.field, 
             &field
         );*/
-    
+  
 
 
 
@@ -1245,8 +1245,8 @@ pub fn insert_constraint_in_smt(
 //    println!("a:{}",value_a);
 //    println!("b:{}",value_b);
 //    println!("c:{}",value_c);
-    let pol = value_a * value_b + value_c;
-    let c = pol._eq(&z3::ast::Int::from_u64(ctx, 0));
+    let pol = value_a * value_b;
+    let c = pol._eq(&value_c);
 //    println!("constraint:{}",c);
     solver.assert(&c);
     return;
