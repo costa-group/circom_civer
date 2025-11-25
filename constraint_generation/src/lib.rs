@@ -46,6 +46,7 @@ pub struct BuildConfig {
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
     pub civer_file: String,
+    pub initial_constraints_file: String
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -88,7 +89,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
             config.check_safety, 
             config.add_tags_info, 
             config.add_postconditions_info,
-            &config.civer_file
+            &config.civer_file,
+            &config.initial_constraints_file
         );
         
     }
@@ -124,7 +126,7 @@ fn export(exe: ExecutedProgram, program: ProgramArchive, flags: FlagsExecution) 
 fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout: u64, check_tags: bool, check_postconditions: bool,
         check_safety: bool, add_tags_info: bool,add_postconditions_info: bool,
-        name: &String,
+        name: &String, name_initial: &String
     )
     {
     use program_structure::constants::UsefulConstants;
@@ -162,10 +164,10 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     let mut init_c = 0;
     count_constraints_node(&tree_constraints, &mut number_constraints, &mut number_components, &mut init_constraint_to_node, &mut init_c);
 
-    println!("Components appereances: {:?}", number_components);
-    //println!("Initial constraint to component: {:?}", init_constraint_to_node);
+
+     
     std::fs::write(
-        "initial_constraints_components.json",
+        name_initial,
         serde_json::to_string_pretty(&init_constraint_to_node).unwrap(),
     );
 
