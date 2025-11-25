@@ -710,7 +710,7 @@ impl TemplateVerification{
         command_args.push("0");
         command_args.push("-complete_non_overflowing_deductions");
         command_args.push("0");
-    
+        command_args.push("--using_cocoa");
         //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
