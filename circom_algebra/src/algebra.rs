@@ -1104,6 +1104,21 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
         HashSet::remove(&mut signals, &cc);
         signals
     }
+    pub fn take_only_linear_signals(&self) -> HashSet<&C> {
+        let cc: C = Constraint::constant_coefficient();
+        let mut signals = HashSet::new();
+        for signal in self.c().keys() {
+            signals.insert(signal);
+        }
+        for signal in self.a().keys() {
+            signals.remove(signal);
+        }
+        for signal in self.b().keys() {
+            signals.remove(signal);
+        }
+        HashSet::remove(&mut signals, &cc);
+        signals
+    }
 
     fn clear_signal(
         mut symbols: HashMap<C, BigInt>,
