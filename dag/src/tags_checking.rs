@@ -516,7 +516,7 @@ impl TemplateVerification{
         let field = z3::ast::Int::from_str(&ctx, &self.field.to_string()).unwrap();
         let mut aux_signals_to_smt_rep = HashMap::new();
         let mut aux_signals_to_smt_rep_aux = HashMap::new();
-
+ 
         for s in &self.signals{
             let is_input = s >= &(self.initial_signal + self.number_outputs) && s < &(self.initial_signal + self.number_outputs + self.number_inputs);
 
@@ -668,15 +668,15 @@ impl TemplateVerification{
 
         solver.assert(&!all_outputs_equal);
 
-
+    
         let mut smt2_output = solver.to_string();
-
+     
         //let start_time = std::time::Instant::now();
         //let result_sat = solver.check();
         //let elapsed_time = start_time.elapsed();
 
         //println!("### SMT Solver Execution Time: {:.2?}\n", elapsed_time);
-        let prologue_str = format!("(set-logic QF_FFA)\n");
+        let prologue_str = format!("(set-info :smt-lib-version 2.6)\n(set-logic QF_FFA {})\n",self.field);
         let elapsed_time_str = format!("(check-sat)\n");
         smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
@@ -695,7 +695,7 @@ impl TemplateVerification{
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
-        command_args.push("300");
+        command_args.push("300");/*
         command_args.push("-success");
         command_args.push("false");
         command_args.push("-light_check_determinism");
@@ -709,7 +709,7 @@ impl TemplateVerification{
         command_args.push("-complete_deductions");
         command_args.push("0");
         command_args.push("-complete_non_overflowing_deductions");
-        command_args.push("0");
+        command_args.push("0");*/
         command_args.push("--using_cocoa");
         //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
