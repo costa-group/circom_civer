@@ -681,15 +681,10 @@ impl TemplateVerification{
         smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
         let mut count = 0;
-        for entry in fs::read_dir(".").unwrap() {
-            let entry = entry.unwrap();
-            let file_name = entry.file_name();
-            let file_name_str = file_name.to_string_lossy();
-            if file_name_str.starts_with("output") {
-                count += 1;
-            }
-        }
-        let new_file_name = format!("output_{}.smt2", count);
+        //produce a random number for the file name
+        let mut rng = rand::thread_rng();
+        let random_number: u32 = rng.gen();
+        let new_file_name = format!("output_{}.smt2", random_number);
         std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
         //Execute a command from command line
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
@@ -710,7 +705,9 @@ impl TemplateVerification{
         command_args.push("0");
         command_args.push("-complete_non_overflowing_deductions");
         command_args.push("0");*/
-        command_args.push("--using_cocoa");
+        command_args.push("-using_cocoa");
+        command_args.push("-file");
+        command_args.push(&new_file_name);
         //println!("{:?}",command_args);
 /*        let output = Command::new("../poly-eqs/smtSystem/ffsol")
         .arg(command)
@@ -719,8 +716,7 @@ impl TemplateVerification{
         .expect("Fallo al ejecutar el comando");
 */
 let mut child = Command::new("/home/miguelis/Systems/poly-eqs/smtSystem/ffsol")
-    .args(command_args)
-    .stdin(entrada) // assuming `entrada` is properly set up
+    .args(command_args) // assuming `entrada` is properly set up
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())
     .spawn()
