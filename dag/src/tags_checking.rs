@@ -2,6 +2,7 @@ use std::{collections::{HashMap, LinkedList}, cmp::max};
 use num_bigint_dig::BigInt;
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
 use crate::{PossibleResult, ExecutedImplication};
+use rand::Rng;
 use std::fs;
 use std::io;
 use std::io::Write;
