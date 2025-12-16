@@ -685,9 +685,17 @@ impl TemplateVerification{
         let mut rng = rand::thread_rng();
         let random_number: u32 = rng.gen();
         let new_file_name = format!("output_{}.smt2", random_number);
-        std::fs::write(new_file_name.clone(), smt2_output).expect("Unable to write SMT2 file");
+        // Ensure the SMT2 text is fully written and flushed to disk before continuing.
+        {
+            let mut file = File::create(&new_file_name).expect("Unable to create SMT2 file");
+            file.write_all(smt2_output.as_bytes()).expect("Unable to write SMT2 file");
+            file.sync_all().expect("Failed to sync SMT2 file to disk");
+            file.flush().expect("Failed to flush SMT2 file");
+            // `file` dropped here
+        }
+    
         //Execute a command from command line
-        let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
+        //let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
         let timeout_str = format!("{}",self.verification_timeout/1000);
@@ -738,11 +746,16 @@ if let Some(start) = abbreviated_name.find('(') {
     }
 } 
 let copy_file_name = format!("{}_{}.smt2", abbreviated_name, random_number);
+
+let safe_copy = format!("./output_2_{}.smt2", random_number);
+fs::copy(&new_file_name, &safe_copy).expect("Unable to copy file");
+
 if !std::path::Path::new("smt_problems").exists() {
     fs::create_dir_all("smt_problems").expect("Unable to create directory");
 }
 let new_file_path = format!("smt_problems/{}", copy_file_name);
-//fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
+
+fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
 // Timeout duration
 let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
 let mut output;
