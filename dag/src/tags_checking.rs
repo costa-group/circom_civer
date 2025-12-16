@@ -681,7 +681,6 @@ impl TemplateVerification{
         let elapsed_time_str = format!("(check-sat)\n");
         smt2_output = format!("{}{}{}", prologue_str,smt2_output, elapsed_time_str);
 
-        let mut count = 0;
         //produce a random number for the file name
         let mut rng = rand::thread_rng();
         let random_number: u32 = rng.gen();
@@ -691,7 +690,7 @@ impl TemplateVerification{
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
-        command_args.push("300");/*
+        command_args.push("30");/*
         command_args.push("-success");
         command_args.push("false");
         command_args.push("-light_check_determinism");
@@ -736,7 +735,7 @@ if let Some(start) = abbreviated_name.find('(') {
         }
     }
 } 
-let copy_file_name = format!("{}_{}.smt2", abbreviated_name, count);
+let copy_file_name = format!("{}_{}.smt2", abbreviated_name, random_number);
 if !std::path::Path::new("smt_problems").exists() {
     fs::create_dir_all("smt_problems").expect("Unable to create directory");
 }
@@ -744,7 +743,7 @@ let new_file_path = format!("smt_problems/{}", copy_file_name);
 fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
 // Timeout duration
 let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
-let output;
+let mut output;
 match child.wait_timeout(timeout).expect("Failed while waiting for the process") {
     Some(status) => {
         // Process finished within the timeout
@@ -763,9 +762,10 @@ match child.wait_timeout(timeout).expect("Failed while waiting for the process")
             .expect("Failed to obtain the output");
     }
 }
-
-    io::stderr().write_all(&output.stderr).unwrap();
-    let stdout = String::from_utf8_lossy(&output.stdout);    
+    //mostrar los errores en un fichero
+    let mut error_file = File::create("error_log.txt").expect("Unable to create error log file");
+    error_file.write_all(&output.stderr).unwrap();
+    let stdout = String::from_utf8_lossy(&output.stdout);
     let mut result_solver = SatResult::Unknown;
     if let Some(ultima_linea) = stdout.lines().rev().find(|l| !l.trim().is_empty()) {
         if ultima_linea == "unsat" { 
