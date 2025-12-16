@@ -690,7 +690,9 @@ impl TemplateVerification{
         let entrada = File::open(new_file_name.clone()).expect("No se pudo abrir el archivo de entrada");
         let mut command_args = Vec::new();
         command_args.push("-tlimit");
-        command_args.push("30");/*
+        let timeout_str = format!("{}",self.verification_timeout/1000);
+        command_args.push(timeout_str.as_str());
+        /*
         command_args.push("-success");
         command_args.push("false");
         command_args.push("-light_check_determinism");
@@ -740,7 +742,7 @@ if !std::path::Path::new("smt_problems").exists() {
     fs::create_dir_all("smt_problems").expect("Unable to create directory");
 }
 let new_file_path = format!("smt_problems/{}", copy_file_name);
-fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
+//fs::copy(&new_file_name, &new_file_path).expect("Unable to copy file");
 // Timeout duration
 let timeout = Duration::from_millis(self.verification_timeout); // adjust as needed
 let mut output;
