@@ -30,6 +30,7 @@ pub struct ExecutionConfig {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub apply_deduction_assigned: bool
 }
 
 pub fn execute_project(
@@ -56,7 +57,8 @@ pub fn execute_project(
         add_tags_info: config.add_tags_info,
         add_postconditions_info: config.add_postconditions_info,
         civer_file: config.civer_file,
-        initial_constraints_file: config.initial_constraints_file
+        initial_constraints_file: config.initial_constraints_file,
+        apply_deduction_assigned: config.apply_deduction_assigned
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;

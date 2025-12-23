@@ -57,6 +57,7 @@ pub struct TemplateVerification {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub apply_deduction_assigned: bool
 }
 
 impl TemplateVerification{
@@ -86,6 +87,7 @@ impl TemplateVerification{
         check_safety: bool,
         add_tags_info: bool,
         add_postconditions_info: bool,
+        apply_deduction_assigned: bool
     ) -> TemplateVerification {
         let mut fixed_constraints = Vec::new();
         for c in constraints{
@@ -126,6 +128,7 @@ impl TemplateVerification{
             check_safety,
             add_tags_info,
             add_postconditions_info,
+            apply_deduction_assigned
         }
     }
 
@@ -598,28 +601,26 @@ impl TemplateVerification{
             i = i + 1;
         }
 
-        apply_deduction_assigned(
-            &self.constraints, 
-            &ctx, 
-            &solver, 
-            &aux_signals_to_smt_rep, 
-            &aux_signals_to_smt_rep_aux
-        );
-
-        /* 
-        apply_deduction_rule_homologues(
-            &self.constraints, 
-            &ctx, 
-            &solver, 
-            &aux_signals_to_smt_rep,
-            &aux_signals_to_smt_rep_aux,
-            &self.deductions,
-            &self.field, 
-            &field
-        );
-        */
-    
-
+        if self.apply_deduction_assigned{
+                apply_deduction_assigned(
+                &self.constraints, 
+                &ctx, 
+                &solver, 
+                &aux_signals_to_smt_rep, 
+                &aux_signals_to_smt_rep_aux
+            );
+        } else{
+            apply_deduction_rule_homologues(
+                &self.constraints, 
+                &ctx, 
+                &solver, 
+                &aux_signals_to_smt_rep,
+                &aux_signals_to_smt_rep_aux,
+                &self.deductions,
+                &self.field, 
+                &field
+            );
+        }
 
 
         for (inputs, outputs) in &self.implications_safety{

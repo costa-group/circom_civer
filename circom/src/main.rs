@@ -52,6 +52,7 @@ fn start() -> Result<(), ()> {
         check_safety: user_input.check_safety(),
         add_tags_info: user_input.add_tags_info(),
         add_postconditions_info: user_input.add_postconditions_info(),
+        apply_deduction_assigned: user_input.apply_deduction_assigned()
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {

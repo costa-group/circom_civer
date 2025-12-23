@@ -42,6 +42,7 @@ pub struct Input {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
+    pub apply_deduction_assigned: bool
 }
 
 
@@ -126,6 +127,7 @@ impl Input {
             check_safety: input_processing::get_flag_check_safety(&matches),
             add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             add_postconditions_info: input_processing::get_flag_add_postconditions_info(&matches),
+            apply_deduction_assigned: input_processing::get_apply_deduction_assigned(&matches)
         })
     }
 
@@ -268,6 +270,9 @@ impl Input {
     pub fn add_postconditions_info(&self) -> bool {
         self.add_postconditions_info
     }
+    pub fn apply_deduction_assigned(&self) -> bool {
+        self.apply_deduction_assigned
+    }
 
 }
 mod input_processing {
@@ -396,7 +401,9 @@ mod input_processing {
     pub fn get_flag_add_postconditions_info(matches: &ArgMatches) -> bool {
         matches.is_present("flag_add_postconditions_info")
     }
-
+    pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
+        matches.is_present("apply_deduction_assigned")
+    }
 
 
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
@@ -631,6 +638,13 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(980)
                     .help("Indicates if CIVER adds the information given by the postconditions when proving safety"),
+            )
+            .arg(
+                Arg::with_name("apply_deduction_assigned")
+                    .long("apply_deduction_assigned")
+                    .takes_value(false)
+                    .display_order(980)
+                    .help("Indicates if CIVER applies the rule for linear constraints"),
             )
             .arg (
                 Arg::with_name("prime")

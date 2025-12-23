@@ -75,7 +75,7 @@ pub struct TreeConstraints {
     number_outputs: usize,
     initial_signal: usize,
     subcomponents: LinkedList<TreeConstraints>,
-    is_custom: bool
+    is_custom: bool,
 }
 
 impl TreeConstraints {
@@ -132,7 +132,7 @@ impl TreeConstraints {
     }
 
     pub fn check_tags(&self, field: &BigInt, verification_timeout: u64, check_tags: bool, check_postconditions: bool, check_safety: bool, 
-        add_tags_info: bool, add_postconditions_info: bool,
+        add_tags_info: bool, add_postconditions_info: bool, apply_deduction_assigned: bool
     ) -> (PossibleResult, PossibleResult, PossibleResult, Vec<String>){
         
         
@@ -197,6 +197,7 @@ impl TreeConstraints {
             check_safety,
             add_tags_info,
             add_postconditions_info,
+            apply_deduction_assigned
         );
         logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));
         if check_tags{
