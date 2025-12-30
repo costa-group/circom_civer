@@ -46,6 +46,7 @@ fn start() -> Result<(), ()> {
         civer: user_input.civer(),
         civer_file: user_input.civer_file().to_string(),
         initial_constraints_file: user_input.initial_constraints_file().to_string(),
+        structure_file: user_input.structure_file().to_string(),
         verification_timeout: user_input.verification_timeout(),
         check_tags: user_input.check_tags(),
         check_postconditions: user_input.check_postconditions(),

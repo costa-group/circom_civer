@@ -15,6 +15,7 @@ pub struct Input {
     pub out_sym: PathBuf,
     pub out_civer: PathBuf,
     pub out_initial_constraints: PathBuf,
+    pub out_structure: PathBuf,
     //pub field: &'static str,
     pub c_flag: bool,
     pub wasm_flag: bool,
@@ -79,6 +80,8 @@ impl Input {
         let link_libraries = input_processing::get_link_libraries(&matches);
         let (spec_libraries, civer) = input_processing::get_spec_libraries(&matches);
         let file_name_initial_constraints = format!("{}_initial_constraints", file_name);
+        let file_structure = format!("{}_structure", file_name);
+        
         Result::Ok(Input {
             //field: P_BN128,
             input_program: input,
@@ -95,7 +98,7 @@ impl Input {
             out_civer: Input::build_output(&output_path, &file_name, CIVER),
             
             out_initial_constraints: Input::build_output(&output_path, &file_name_initial_constraints, JSON),
-
+            out_structure: Input::build_output(&output_path, &file_structure, JSON),
             out_json_constraints: Input::build_output(
                 &output_path,
                 &format!("{}_constraints", file_name),
@@ -166,6 +169,9 @@ impl Input {
     }
     pub fn initial_constraints_file(&self) -> &str {
         self.out_initial_constraints.to_str().unwrap()
+    }
+    pub fn structure_file(&self) -> &str {
+        self.out_structure.to_str().unwrap()
     }
     pub fn wat_file(&self) -> &str {
         self.out_wat_code.to_str().unwrap()

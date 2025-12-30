@@ -26,6 +26,8 @@ use num_bigint_dig::BigInt;
 use std::collections::{HashMap, BTreeMap};
 use std::fs::File;
 use std::io::Write;
+use serde::{Serialize,Deserialize};
+
 
 
 pub struct BuildConfig {
@@ -47,6 +49,7 @@ pub struct BuildConfig {
     pub add_postconditions_info: bool,
     pub civer_file: String,
     pub initial_constraints_file: String,
+    pub structure_file: String,
     pub apply_deduction_assigned: bool
 }
 
@@ -58,6 +61,36 @@ pub struct FlagsExecution{
 
 pub type ConstraintWriter = Box<dyn ConstraintExporter>;
 type BuildResponse = Result<(ConstraintWriter, VCP), ()>;
+
+#[derive(Deserialize,Serialize, Debug)]
+pub struct TimingInfo{
+    pub graph_construction: f32,
+    pub clustering: f32,
+    pub dag_construction: f32,
+    pub equivalency: f32,
+    pub total: f32,
+}
+
+#[derive(Deserialize,Serialize, Debug, Clone)]
+pub struct NodeInfo{
+    pub node_id: usize,
+    pub constraints: Vec<usize>, //ids of the constraints
+    pub input_signals: Vec<usize>,
+    pub output_signals: Vec<usize>,
+    pub signals: Vec<usize>, 
+    pub successors: Vec<usize> //ids of the successors 
+
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+pub struct StructureInfo {
+    pub timing: TimingInfo,
+    pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
+    pub local_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+    pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+}
+
+
 pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildResponse {
     let files = program.file_library.clone();
     let flags = FlagsExecution{
@@ -92,7 +125,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
             config.add_postconditions_info,
             config.apply_deduction_assigned,
             &config.civer_file,
-            &config.initial_constraints_file
+            &config.initial_constraints_file,
+            &config.structure_file
         );
         
     }
@@ -128,7 +162,8 @@ fn export(exe: ExecutedProgram, program: ProgramArchive, flags: FlagsExecution) 
 fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout: u64, check_tags: bool, check_postconditions: bool,
         check_safety: bool, add_tags_info: bool,add_postconditions_info: bool,
-        apply_deduction_assigned: bool, name: &String, name_initial: &String
+        apply_deduction_assigned: bool, name: &String, name_initial: &String,
+        name_structure: &String
     )
     {
     use program_structure::constants::UsefulConstants;
@@ -164,14 +199,43 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     let mut number_constraints = HashMap::new();
     let mut number_components = HashMap::new();
     let mut init_constraint_to_node =  BTreeMap::new();
+    
+    let mut equivalence_nodes = HashMap::new();
+    let mut node_info = Vec::new();
+
+
     let mut init_c = 0;
     count_constraints_node(&tree_constraints, &mut number_constraints, &mut number_components, &mut init_constraint_to_node, &mut init_c);
-
-
-     
     std::fs::write(
         name_initial,
         serde_json::to_string_pretty(&init_constraint_to_node).unwrap(),
+    );
+
+
+    let mut init_c = 0;
+    let mut node_id = 0;
+    build_structure_nodes(&tree_constraints, &mut node_id, &mut init_c, &mut node_info, &mut equivalence_nodes);
+    let aux_timing = TimingInfo{
+        graph_construction: 0.0,
+        clustering: 0.0,
+        dag_construction: 0.0,
+        equivalency: 0.0,
+        total: 0.0
+    };
+
+    let equiv_to_vec: Vec<Vec<usize>> = equivalence_nodes.into_iter()
+                                        .map(|(_id, class)| class)
+                                        .collect();
+    let structure = StructureInfo{
+        timing: aux_timing,
+        nodes: node_info,
+        local_equivalency: equiv_to_vec.clone(),
+        structural_equivalency: equiv_to_vec
+    };
+     
+    std::fs::write(
+        name_structure,
+        serde_json::to_string_pretty(&structure).unwrap(),
     );
 
     let mut total_cons  = 0;
@@ -374,6 +438,69 @@ fn count_constraints_node(
         count_constraints_node(subcomponent, number_constraints, number_components, init_constraint_to_node, init_c);
     }
 }
+
+fn build_structure_nodes(
+    tree_constraints: &TreeConstraints,
+    node_id: &mut usize,
+    init_c: &mut usize,
+    node_info: &mut Vec<NodeInfo>,
+    equivalence_nodes: &mut HashMap<usize, Vec<usize>>,
+) -> usize{
+    
+    let my_node_id = *node_id;
+    *node_id += 1;
+
+    let equivalence_node_id = tree_constraints.node_id();
+    if equivalence_nodes.contains_key(&equivalence_node_id){
+        let ref_equiv = equivalence_nodes.get_mut(&equivalence_node_id).unwrap();
+        ref_equiv.push(my_node_id);
+
+    } else{
+        equivalence_nodes.insert(equivalence_node_id, vec![my_node_id]);
+    }
+
+    let mut constraints = Vec::new();
+    for i in 0..tree_constraints.constraints().len(){
+        constraints.push(*init_c + i);
+    }
+    *init_c += tree_constraints.constraints().len();
+
+    let mut output_signals = Vec::new();
+    for i in 0..tree_constraints.number_outputs(){
+        output_signals.push(tree_constraints.initial_signal() + i);
+    } 
+
+    let mut input_signals = Vec::new();
+    for i in 0..tree_constraints.number_inputs(){
+        input_signals.push(tree_constraints.initial_signal() + tree_constraints.number_outputs() + i);
+    } 
+
+    let mut signals = Vec::new();
+    for i in 0..tree_constraints.number_signals(){
+        signals.push(tree_constraints.initial_signal() + i);
+    } 
+
+    let new_node = NodeInfo{
+        node_id: my_node_id,
+        constraints,
+        input_signals,
+        output_signals,
+        signals,
+        successors: Vec::new()
+    };
+    node_info.push(new_node);
+
+    let mut successors = Vec::new();
+    for subcomponent in tree_constraints.subcomponents(){
+        successors.push(
+            build_structure_nodes(subcomponent, node_id, init_c, node_info, equivalence_nodes)
+        );
+    }
+    node_info[my_node_id].successors = successors;
+
+    my_node_id
+}
+
 
 
 fn check_tags_node(

@@ -10,6 +10,7 @@ pub struct ExecutionConfig {
     pub sym: String,
     pub civer_file: String,
     pub initial_constraints_file: String,
+    pub structure_file: String,
     pub json_constraints: String,
     pub no_rounds: usize,
     pub flag_s: bool,
@@ -58,6 +59,7 @@ pub fn execute_project(
         add_postconditions_info: config.add_postconditions_info,
         civer_file: config.civer_file,
         initial_constraints_file: config.initial_constraints_file,
+        structure_file: config.structure_file,
         apply_deduction_assigned: config.apply_deduction_assigned
     };
     let custom_gates = program_archive.custom_gates;

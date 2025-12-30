@@ -15,4 +15,5 @@ constraint_writers = { path = "../constraint_writers" }
 constraint_list = { path = "../constraint_list" }
 dag = { path = "../dag" }
 serde_json = "1.0.68"
+serde = { version = "1.0.104", features = ["derive"] }
 

@@ -87,12 +87,32 @@ impl TreeConstraints {
         &self.pretty_template_name
     }
 
+    pub fn node_id(&self)-> usize{
+        self.node_id
+    }
+
     pub fn subcomponents(&self)-> &LinkedList<TreeConstraints>{
         &self.subcomponents
     }
 
     pub fn constraints(&self)-> &Vec<Constraint>{
         &self.constraints
+    }
+
+    pub fn number_signals(&self)-> usize{
+        self.number_signals
+    }
+
+    pub fn number_inputs(&self)-> usize{
+        self.number_inputs
+    }
+
+    pub fn number_outputs(&self)-> usize{
+        self.number_outputs
+    }
+
+    pub fn initial_signal(&self)-> usize{
+        self.initial_signal
     }
 
     pub fn get_no_postconditions(&self) -> usize{
