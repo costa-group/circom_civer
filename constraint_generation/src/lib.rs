@@ -87,8 +87,8 @@ pub struct NodeInfo{
 pub struct StructureInfo {
     pub timing: TimingInfo,
     pub nodes: Vec<NodeInfo>, //all the nodes of the circuit, position of the node is not the position.
-    pub local_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
-    pub structural_equivalency: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+    pub equivalency_local: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
+    pub equivalency_structural: Vec<Vec<usize>>, //equivalence classes, each inner vector is a class
 }
 
 
@@ -230,8 +230,8 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     let structure = StructureInfo{
         timing: aux_timing,
         nodes: node_info,
-        local_equivalency: equiv_to_vec.clone(),
-        structural_equivalency: equiv_to_vec
+        equivalency_local: equiv_to_vec.clone(),
+        equivalency_structural: equiv_to_vec
     };
      
     std::fs::write(
