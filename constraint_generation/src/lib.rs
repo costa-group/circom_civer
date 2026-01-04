@@ -78,6 +78,7 @@ pub struct NodeInfo{
     pub input_signals: Vec<usize>,
     pub output_signals: Vec<usize>,
     pub signals: Vec<usize>, 
+    pub is_custom: bool,
     pub successors: Vec<usize> //ids of the successors 
 
 }
@@ -486,6 +487,7 @@ fn build_structure_nodes(
         input_signals,
         output_signals,
         signals,
+        is_custom: tree_constraints.is_custom(),
         successors: Vec::new()
     };
     node_info.push(new_node);

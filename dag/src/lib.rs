@@ -115,6 +115,10 @@ impl TreeConstraints {
         self.initial_signal
     }
 
+    pub fn is_custom(&self)-> bool{
+        self.is_custom
+    }
+
     pub fn get_no_postconditions(&self) -> usize{
         self.postconditions_intermediates.len() + self.postconditions_outputs.len() 
     }
