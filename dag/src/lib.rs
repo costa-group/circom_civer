@@ -33,7 +33,7 @@ pub struct ExecutedImplication{
 }
 
 
-#[derive(PartialEq, Eq)] 
+#[derive(PartialEq, Eq, Clone)] 
 pub enum PossibleResult{
     VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
 } impl PossibleResult {

@@ -33,6 +33,7 @@ pub struct ExecutionConfig {
     pub only_simple_ffsol: bool,
     pub only_non_linear_ffsol: bool,
     pub nolightwc_ffsol: bool,
+    pub file_solved_templates: Option<String>
 }
 
 pub fn execute_project(
@@ -63,6 +64,7 @@ pub fn execute_project(
         only_non_linear_ffsol: config.only_non_linear_ffsol,
         nolightwc_ffsol: config.nolightwc_ffsol,
         only_simple_ffsol: config.only_simple_ffsol,
+        file_solved_templates: config.file_solved_templates
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;

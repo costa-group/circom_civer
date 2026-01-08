@@ -725,7 +725,7 @@ impl TemplateVerification{
         .output() // Lanza el proceso
         .expect("Fallo al ejecutar el comando");
 */
-let mut child = Command::new("/home/miguelis/Systems/poly-eqs/smtSystem/ffsol")
+let mut child = Command::new("/home/clara/circom/proving_unsat/poly-eqs/smtSystem/ffsol")
     .args(command_args) // assuming `entrada` is properly set up
     .stdout(Stdio::piped())
     .stderr(Stdio::piped())

@@ -55,6 +55,7 @@ fn start() -> Result<(), ()> {
         only_simple_ffsol: user_input.only_simple_ffsol_flag(),
         only_non_linear_ffsol: user_input.only_non_linear_ffsol_flag(),
         nolightwc_ffsol: user_input.nolightwc_ffsol_flag(),
+        file_solved_templates: user_input.file_solved_templates(),
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {
