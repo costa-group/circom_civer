@@ -6,6 +6,7 @@ mod environment_utils;
 mod execute;
 mod execution_data;
 
+use std::io::BufReader;
 use ansi_term::Colour;
 use circom_algebra::algebra::{ArithmeticError, ArithmeticExpression};
 use compiler::hir::very_concrete_program::VCP;
@@ -50,7 +51,8 @@ pub struct BuildConfig {
     pub civer_file: String,
     pub initial_constraints_file: String,
     pub structure_file: String,
-    pub apply_deduction_assigned: bool
+    pub apply_deduction_assigned: bool,
+    pub file_solved_templates: Option<String>
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -127,7 +129,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
             config.apply_deduction_assigned,
             &config.civer_file,
             &config.initial_constraints_file,
-            &config.structure_file
+            &config.structure_file,
+            config.file_solved_templates.clone()
         );
         
     }
@@ -164,13 +167,20 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
         verification_timeout: u64, check_tags: bool, check_postconditions: bool,
         check_safety: bool, add_tags_info: bool,add_postconditions_info: bool,
         apply_deduction_assigned: bool, name: &String, name_initial: &String,
-        name_structure: &String
+        name_structure: &String, file_studied_nodes: Option<String>
     )
     {
     use program_structure::constants::UsefulConstants;
 
     let mut studied_nodes: HashMap<String, ((usize, usize), (PossibleResult, PossibleResult, PossibleResult))> = HashMap::new();
-        
+    
+
+    let mut previously_studied_nodes = HashMap::new();
+    // Read the structure
+    if file_studied_nodes.is_some(){
+        read_studied_nodes(file_studied_nodes.unwrap(), &mut previously_studied_nodes);
+    }
+
     let constants = UsefulConstants::new(prime);
     let field = constants.get_p().clone();
     
@@ -194,7 +204,7 @@ fn check_tags(tree_constraints: TreeConstraints, prime: &String,
     let logs = check_tags_node(&tree_constraints, &mut studied_nodes, &field,
         verification_timeout, check_tags, check_postconditions,
         check_safety, add_tags_info, add_postconditions_info,
-        apply_deduction_assigned
+        apply_deduction_assigned, &previously_studied_nodes
     );
 
     let mut number_constraints = HashMap::new();
@@ -516,39 +526,56 @@ fn check_tags_node(
     add_tags_info: bool, 
     add_postconditions_info: bool,
     apply_deduction_assigned: bool,
+    previously_studied_nodes: &HashMap<String, PossibleResult>
 ) -> Vec<String>{
-    if !studied_nodes.contains_key(tree_constraints.pretty_template_name()){
-        let mut number_tags_postconditions = tree_constraints.get_no_tags_postconditions();
-        let mut number_postconditions = tree_constraints.get_no_postconditions();
-        let mut logs = Vec::new();
-        for subcomponent in tree_constraints.subcomponents(){
-            logs.append(&mut check_tags_node(subcomponent, studied_nodes, field,
-                verification_timeout, check_tags, check_postconditions, 
-                check_safety, add_tags_info, add_postconditions_info,
-                apply_deduction_assigned
-            ));
-            number_tags_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.0;
-            number_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.1;
-
-        }
-
-        let (result_tags, result_post, result_safety, mut new_logs) = tree_constraints.check_tags(
-            field,
-            verification_timeout,
-            check_tags,
-            check_postconditions, 
-            check_safety, 
-            add_tags_info, 
-            add_postconditions_info,
-            apply_deduction_assigned
+    if previously_studied_nodes.contains_key(tree_constraints.pretty_template_name()){
+        let previous_result = previously_studied_nodes.get(tree_constraints.pretty_template_name()).unwrap();
+        studied_nodes.insert(
+            tree_constraints.pretty_template_name().clone(),
+            (
+                (0,0),
+                (
+                    PossibleResult::NOSTUDIED,
+                    PossibleResult::NOSTUDIED,
+                    previous_result.clone()
+                )
+            )
         );
-        logs.append(&mut new_logs);
-        logs.push("\n\n".to_string());
-        let result_component = (result_tags, result_post, result_safety);
-        studied_nodes.insert(tree_constraints.pretty_template_name().clone(), ((number_tags_postconditions, number_postconditions), result_component));
-        logs
-    } else{
         Vec::new()
+    } else{
+        if !studied_nodes.contains_key(tree_constraints.pretty_template_name()){
+            let mut number_tags_postconditions = tree_constraints.get_no_tags_postconditions();
+            let mut number_postconditions = tree_constraints.get_no_postconditions();
+            let mut logs = Vec::new();
+            for subcomponent in tree_constraints.subcomponents(){
+                logs.append(&mut check_tags_node(subcomponent, studied_nodes, field,
+                    verification_timeout, check_tags, check_postconditions, 
+                    check_safety, add_tags_info, add_postconditions_info,
+                    apply_deduction_assigned, previously_studied_nodes
+                ));
+                number_tags_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.0;
+                number_postconditions += studied_nodes.get(subcomponent.pretty_template_name()).unwrap().0.1;
+
+            }
+
+            let (result_tags, result_post, result_safety, mut new_logs) = tree_constraints.check_tags(
+                field,
+                verification_timeout,
+                check_tags,
+                check_postconditions, 
+                check_safety, 
+                add_tags_info, 
+                add_postconditions_info,
+                apply_deduction_assigned
+            );
+            logs.append(&mut new_logs);
+            logs.push("\n\n".to_string());
+            let result_component = (result_tags, result_post, result_safety);
+            studied_nodes.insert(tree_constraints.pretty_template_name().clone(), ((number_tags_postconditions, number_postconditions), result_component));
+            logs
+        } else{
+            Vec::new()
+        }
     }
 }
 
@@ -587,4 +614,30 @@ fn simplification_process(vcp: &mut VCP, dag: DAG, config: &BuildConfig) -> Cons
     let list = DAG::map_to_list(dag, flags);
     VCP::add_witness_list(vcp, Rc::new(list.get_witness_as_vec()));
     list
+}
+
+
+
+pub fn read_studied_nodes(path: String, previously_studied_nodes: &mut HashMap<String, PossibleResult>){
+
+    // Open the file in read-only mode with buffer.
+    let file = File::open(path).unwrap();
+    let reader = BufReader::new(file);
+    // Read the JSON contents of the file as an instance of `StructureInfo`.
+    let file_studied_nodes: HashMap<String, String> = serde_json::from_reader(reader).unwrap();
+
+    for (file, result) in file_studied_nodes{
+        let v_result = match result.as_str(){
+            "verified" => PossibleResult::VERIFIED,
+            "timeout" => PossibleResult::UNKNOWN,
+            "failed" => PossibleResult::FAILED,
+            _ => unreachable!()
+        };
+
+        previously_studied_nodes.insert(
+            file,
+            v_result
+        );
+    }
+
 }

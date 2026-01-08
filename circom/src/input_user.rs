@@ -43,7 +43,8 @@ pub struct Input {
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub add_postconditions_info: bool,
-    pub apply_deduction_assigned: bool
+    pub apply_deduction_assigned: bool,
+    pub file_solved_templates: Option<PathBuf>
 }
 
 
@@ -81,7 +82,8 @@ impl Input {
         let (spec_libraries, civer) = input_processing::get_spec_libraries(&matches);
         let file_name_initial_constraints = format!("{}_initial_constraints", file_name);
         let file_structure = format!("{}_structure", file_name);
-        
+        let file_solved_templates = input_processing::get_file_solved_templates(&matches)?;
+
         Result::Ok(Input {
             //field: P_BN128,
             input_program: input,
@@ -130,7 +132,8 @@ impl Input {
             check_safety: input_processing::get_flag_check_safety(&matches),
             add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             add_postconditions_info: input_processing::get_flag_add_postconditions_info(&matches),
-            apply_deduction_assigned: input_processing::get_apply_deduction_assigned(&matches)
+            apply_deduction_assigned: input_processing::get_apply_deduction_assigned(&matches),
+            file_solved_templates
         })
     }
 
@@ -279,6 +282,15 @@ impl Input {
     pub fn apply_deduction_assigned(&self) -> bool {
         self.apply_deduction_assigned
     }
+    pub fn file_solved_templates(&self) -> Option<String> {
+        match &self.file_solved_templates{
+            Some(value) =>{
+               Some(value.to_str().as_ref().unwrap().to_string())
+            }
+            None => None
+        }
+    }
+
 
 }
 mod input_processing {
@@ -409,6 +421,23 @@ mod input_processing {
     }
     pub fn get_apply_deduction_assigned(matches: &ArgMatches) -> bool {
         matches.is_present("apply_deduction_assigned")
+    }
+
+
+    pub fn get_file_solved_templates(matches: &ArgMatches) -> Result<Option<PathBuf>, ()> {
+
+        match matches.is_present("solved_templates"){
+            true =>{
+                let route = Path::new(matches.value_of("solved_templates").unwrap()).to_path_buf();
+                if route.is_file() {
+                    Result::Ok(Some(route))
+                } else {
+                    let route = if route.to_str().is_some() { ": ".to_owned() + route.to_str().unwrap()} else { "".to_owned() };
+                    Result::Err(eprintln!("{}", Colour::Red.paint("Solved templates file does not exist".to_owned() + &route)))
+                }
+            },
+            false => Ok(None)
+        }
     }
 
 
@@ -651,6 +680,14 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(980)
                     .help("Indicates if CIVER applies the rule for linear constraints"),
+            )
+            .arg(
+                Arg::with_name("solved_templates")
+                    .short("solved_templates")
+                    .long("solved_templates")
+                    .takes_value(true)
+                    .display_order(995)
+                    .help("To indicate the templates that are assumed as solved"),
             )
             .arg (
                 Arg::with_name("prime")
