@@ -38,7 +38,7 @@ pub enum PossibleResult{
     VERIFIED, UNKNOWN, FAILED, NOSTUDIED, NOTHING
 } impl PossibleResult {
     fn finished_verification(&self) -> bool{
-        self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING
+        self == &PossibleResult::VERIFIED || self == &PossibleResult::NOSTUDIED || self == &PossibleResult::NOTHING || self == &PossibleResult::UNKNOWN
     }
     fn result_to_str(&self)-> String{
         match self{
