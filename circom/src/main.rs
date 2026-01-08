@@ -51,6 +51,7 @@ fn start() -> Result<(), ()> {
         check_safety: user_input.check_safety(),
         add_tags_info: user_input.add_tags_info(),
         add_postconditions_info: user_input.add_postconditions_info(),
+        file_solved_templates: user_input.file_solved_templates(),
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {
