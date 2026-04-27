@@ -5,9 +5,11 @@ use circom_algebra::algebra::ArithmeticExpression;
 use compiler::hir::very_concrete_program::*;
 use dag::DAG;
 use num_bigint::BigInt;
-use program_structure::ast::{SignalType, Statement};
+use program_structure::ast::{SignalType, Statement, Expression};
 use std::collections::{HashMap, HashSet};
 use crate::execution_data::AExpressionSlice;
+use std::collections::LinkedList;
+use program_structure::program_library::tag_specification_data::TagSpecificationInfo;
 
 
 struct Connexion {
@@ -75,7 +77,9 @@ pub struct ExecutedTemplate {
     pub public_inputs: HashSet<String>,
     pub parameter_instances: ParameterContext,
     pub tag_instances: HashMap<String, TagWire>,
-    pub signal_to_tags: HashMap<Vec<String>, BigInt>, 
+
+    pub signal_to_tags: HashMap<Vec<String>, Vec<String>>, 
+    pub signal_to_tags_with_value: HashMap<Vec<String>, BigInt>, 
     // only store the info of the tags with value
     // name of tag -> value
     pub is_parallel: bool,
@@ -84,7 +88,12 @@ pub struct ExecutedTemplate {
     pub underscored_signals: Vec<String>,
     connexions: Vec<Connexion>,
     pub bus_connexions: HashMap<String, BusConnexion>,
-    pub is_extern_c: bool
+    pub is_extern_c: bool,
+
+    pub specification_preconditions: LinkedList<Expression>,
+    pub specification_intermediates: LinkedList<Expression>,
+    pub specification_postconditions: LinkedList<Expression>,
+
 }
 
 impl ExecutedTemplate {
@@ -112,6 +121,7 @@ impl ExecutedTemplate {
             template_name: name,
             parameter_instances: instance,
             signal_to_tags: HashMap::new(),
+            signal_to_tags_with_value: HashMap::new(),
             tag_instances,
             inputs: WireCollector::new(),
             outputs: WireCollector::new(),
@@ -123,7 +133,10 @@ impl ExecutedTemplate {
             connexions: Vec::new(),
             bus_connexions: HashMap::new(),
             underscored_signals: Vec::new(),
-            is_extern_c
+            is_extern_c,
+            specification_preconditions: LinkedList::new(),
+            specification_intermediates: LinkedList::new(),
+            specification_postconditions: LinkedList::new()
         }
     }
 
@@ -195,10 +208,23 @@ impl ExecutedTemplate {
     // when we finish the execution of a template
     pub fn add_tag_signal(
         &mut self, 
-        signal_name: Vec<String>, 
-        value: BigInt
+        mut signal_name: Vec<String>, 
+        tag_name: String,
+        value: Option<BigInt>
     ){
-        self.signal_to_tags.insert(signal_name, value);
+        let tags_signal = self.signal_to_tags.get_mut(&signal_name);
+        match tags_signal{
+            None =>{
+                self.signal_to_tags.insert(signal_name.clone(), vec![tag_name.clone()]);
+            },
+            Some(tags)=>{
+                tags.push(tag_name.clone());
+            }
+        }
+        if value.is_some(){
+            signal_name.push(tag_name);
+            self.signal_to_tags_with_value.insert(signal_name, value.unwrap());
+        }
     }
 
     pub fn add_component(&mut self, component_name: &str, dimensions: &[usize], is_anonymous: bool) {
@@ -243,7 +269,7 @@ impl ExecutedTemplate {
         &self.intermediates
     }
 
-    pub fn insert_in_dag(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>) {
+    pub fn insert_in_dag(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, tag_specifications: &TagSpecificationInfo) {
         let parameters = {
             let mut parameters = vec![];
             for (_, data) in self.parameter_instances.clone() {
@@ -257,62 +283,171 @@ impl ExecutedTemplate {
 
         dag.add_node(
             self.report_name.clone(),
+            self.report_name.clone(), // TODO: improve?
             parameters,
             self.is_parallel,
             self.is_custom_gate
         );
-        self.build_wires(dag, buses_info);
+        self.build_wires(dag, buses_info, tag_specifications);
         self.build_ordered_signals(dag, buses_info);
         self.build_connexions(dag);
         self.build_constraints(dag);
+        self.build_specifications(dag);
+
     }
 
-    fn build_wires(&self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>) {
+    fn build_wires(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, tag_specifications: &TagSpecificationInfo) {
+        
+        let mut specification_preconditions = LinkedList::new();
+        let mut specification_intermediates = LinkedList::new();
+        let mut specification_postconditions = LinkedList::new();
+
+        
         for wire_data in self.outputs() {
-            let state = State { basic_name: wire_data.name.clone(), name: wire_data.name.clone(), dim: 0 };
+            let state = State { 
+                basic_name: wire_data.name.clone(), 
+                signal_field_names: vec![wire_data.name.clone()],
+                name: wire_data.name.clone(), 
+                dim: 0 
+            };
             let config = SignalConfig { signal_type: 1, dimensions: &wire_data.length, is_public: false };
-            if wire_data.is_bus{
-                generate_bus_symbols(dag, state, &config, &self.bus_connexions, buses_info );
+            let mut instantiated_spec = if wire_data.is_bus{
+                generate_bus_symbols(
+                    dag, 
+                    state, 
+                    &config, 
+                    &self.bus_connexions, 
+                    buses_info,
+                    &self.signal_to_tags,
+                    &self.signal_to_tags_with_value,
+                    tag_specifications
+                 )
             } else{
-                generate_symbols(dag, state, &config);
-            }
-        }
+                generate_symbols(
+                    dag, 
+                    state, 
+                    &config,
+                    &self.signal_to_tags,
+                    &self.signal_to_tags_with_value,
+                    tag_specifications
+                )
+            };
+            specification_postconditions.append(&mut instantiated_spec);
+
+        }   
         for wire_data in self.inputs() {
             if self.public_inputs.contains(&wire_data.name) {
-                let state = State { basic_name: wire_data.name.clone(),  name: wire_data.name.clone(), dim: 0 };
+                let state = State { 
+                    basic_name: wire_data.name.clone(), 
+                    signal_field_names: vec![wire_data.name.clone()],
+                    name: wire_data.name.clone(), 
+                    dim: 0 
+                };
                 let config = SignalConfig { signal_type: 0, dimensions: &wire_data.length, is_public: true };
-                if wire_data.is_bus{
-                    generate_bus_symbols(dag, state, &config, &self.bus_connexions, buses_info );
+                let mut instantiated_spec = if wire_data.is_bus{
+                    generate_bus_symbols(
+                        dag, 
+                        state, 
+                        &config, 
+                        &self.bus_connexions, 
+                        buses_info,
+                        &self.signal_to_tags,
+                        &self.signal_to_tags_with_value,
+                        tag_specifications
+                    )
                 } else{
-                    generate_symbols(dag, state, &config);
-                }
+                    generate_symbols(
+                        dag, 
+                        state, 
+                        &config,
+                        &self.signal_to_tags,
+                        &self.signal_to_tags_with_value,
+                        tag_specifications
+                    )
+                };
+                specification_preconditions.append(&mut instantiated_spec);
             }
         }
         for wire_data in self.inputs() {
             if !self.public_inputs.contains(&wire_data.name) {
-                let state = State { basic_name: wire_data.name.clone(), name: wire_data.name.clone(), dim: 0 };
+                let state = State { 
+                    basic_name: wire_data.name.clone(), 
+                    signal_field_names: vec![wire_data.name.clone()],
+                    name: wire_data.name.clone(), 
+                    dim: 0 
+                };
                 let config = SignalConfig { signal_type: 0, dimensions: &wire_data.length, is_public: false };
-                if wire_data.is_bus{
-                    generate_bus_symbols(dag, state, &config, &self.bus_connexions, buses_info );
+                let mut instantiated_spec = if wire_data.is_bus{
+                    generate_bus_symbols(
+                        dag, 
+                        state, 
+                        &config, 
+                        &self.bus_connexions, 
+                        buses_info,
+                        &self.signal_to_tags,
+                        &self.signal_to_tags_with_value,
+                        tag_specifications
+                    )
                 } else{
-                    generate_symbols(dag, state, &config);
-                }
+                    generate_symbols(
+                        dag, 
+                        state, 
+                        &config,
+                        &self.signal_to_tags,
+                        &self.signal_to_tags_with_value,
+                        tag_specifications
+                    )
+                };
+                specification_preconditions.append(&mut instantiated_spec);
             }
         }
         for wire_data in self.intermediates() {
-            let state = State { basic_name: wire_data.name.clone(), name: wire_data.name.clone(), dim: 0 };
+            let state = State { 
+                basic_name: wire_data.name.clone(), 
+                signal_field_names: vec![wire_data.name.clone()],
+                name: wire_data.name.clone(), 
+                dim: 0 
+            };
             let config = SignalConfig { signal_type: 2, dimensions: &wire_data.length, is_public: false };
-            if wire_data.is_bus{
-                generate_bus_symbols(dag, state, &config, &self.bus_connexions, buses_info );
+            let mut instantiated_spec = if wire_data.is_bus{
+                generate_bus_symbols(
+                    dag, 
+                    state, 
+                    &config, 
+                    &self.bus_connexions, 
+                    buses_info,
+                    &self.signal_to_tags,
+                    &self.signal_to_tags_with_value,
+                    tag_specifications
+                 )
             } else{
-                generate_symbols(dag, state, &config);
-            }
+                generate_symbols(
+                    dag, 
+                    state, 
+                    &config,
+                    &self.signal_to_tags,
+                    &self.signal_to_tags_with_value,
+                    tag_specifications
+                )
+            };
+            specification_intermediates.append(&mut instantiated_spec);
         }
+
+        self.specification_preconditions = specification_preconditions;
+        self.specification_postconditions = specification_postconditions;
+        self.specification_intermediates = specification_intermediates;
+
+
     }
 
     fn build_ordered_signals(&self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>) {
         for wire_data in &self.ordered_signals {
-            let state = State { basic_name: wire_data.name.clone(), name: wire_data.name.clone(), dim: 0 };
+            let state = State { 
+                basic_name: wire_data.name.clone(), 
+                signal_field_names: Vec::new(),// no needed in this case
+                name: wire_data.name.clone(), 
+                dim: 0 
+            };
             let config = OrderedSignalConfig { dimensions: &wire_data.length };
             if wire_data.is_bus{
                 generate_ordered_bus_symbols(dag, state, &config, &self.bus_connexions, buses_info );
@@ -358,6 +493,25 @@ impl ExecutedTemplate {
             let new_s = correspondence.get(s).unwrap().clone();
             dag.add_underscored_signal(new_s);
         }
+    }
+
+    fn build_specifications(&self, dag: &mut DAG) {
+        for c in &self.specification_preconditions {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_specification_precondition(cc);
+        }
+        for c in &self.specification_postconditions {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_specification_postcondition(cc);
+        }
+        for c in &self.specification_intermediates {
+            let correspondence = dag.get_main().unwrap().correspondence();
+            let cc = c.apply_correspondence(correspondence);
+            dag.add_specification_intermediate(cc);
+        }
+        
     }
 
     pub fn export_to_circuit(self, instances: &mut [TemplateInstance], buses_info : &Vec<BusInstance>) -> TemplateInstance {
@@ -422,6 +576,8 @@ impl ExecutedTemplate {
         let triggers = build_triggers(instances, self.connexions);
         let components = build_components(self.components);
         let arguments = build_arguments(self.parameter_instances);
+
+
         let config = TemplateConfig {
             header,
             clusters,
@@ -434,9 +590,10 @@ impl ExecutedTemplate {
             code: self.code,
             name: self.template_name,
             number_of_components : self.number_of_components,
-            signals_to_tags: self.signal_to_tags,
+            signals_to_tags: self.signal_to_tags_with_value,
             is_extern_c: self.is_extern_c
         };
+
 
         let mut instance = TemplateInstance::new(config);
 
@@ -566,10 +723,50 @@ struct SignalConfig<'a> {
 struct State {
     basic_name: String, //Only name without array accesses [].
     name: String, //Full name with array accesses.
+    signal_field_names: Vec<String>,
     dim: usize,
 }
-fn generate_symbols(dag: &mut DAG, state: State, config: &SignalConfig) {
+fn generate_symbols(
+    dag: &mut DAG, 
+    state: State, 
+    config: &SignalConfig, 
+    signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
+    signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
+    tag_specifications: &TagSpecificationInfo
+) -> LinkedList<Expression>{
     if state.dim == config.dimensions.len() {
+
+        // add the specification of the signal to the dag
+        let mut instantiated_specifications = LinkedList::new();
+        let tags = signal_to_tags.get(&state.signal_field_names);
+        match tags{
+            Some(list_tags)=>{
+                for tag in list_tags{
+                    let tag_specification = tag_specifications.get(tag);
+                    match tag_specification{
+                        Some(spec)=>{
+                            let condition = spec.get_condition();
+                            instantiated_specifications.push_back(
+                                instantiate_expression(
+                                    condition,
+                                    &state.name,
+                                    &state.signal_field_names,
+                                    signal_to_tags_with_value
+                                )
+                            );
+                        },
+                        None =>{
+                            // no need to add
+                        }
+                    }
+                }
+            },
+            None =>{
+                // no tags associated
+            }
+        }
+
+
         if config.signal_type == 0 {
             dag.add_input(state.name, config.is_public);
         } else if config.signal_type == 1 {
@@ -577,41 +774,229 @@ fn generate_symbols(dag: &mut DAG, state: State, config: &SignalConfig) {
         } else if config.signal_type == 2 {
             dag.add_intermediate(state.name);
         }
+        instantiated_specifications
+
     } else {
         let mut index = 0;
+        let mut instantiated_specifications = LinkedList::new();
+
         while index < config.dimensions[state.dim] {
             let new_state =
-                State { basic_name: state.basic_name.clone(), name: format!("{}[{}]", state.name, index), dim: state.dim + 1 };
-            generate_symbols(dag, new_state, config);
+                State { 
+                    basic_name: state.basic_name.clone(), 
+                    signal_field_names: state.signal_field_names.clone(),
+                    name: format!("{}[{}]", state.name, index), 
+                    dim: state.dim + 1 
+                };
+            instantiated_specifications.append(
+                &mut generate_symbols(
+                    dag, 
+                    new_state, 
+                    config,
+                    signal_to_tags,
+                    signal_to_tags_with_value,
+                    tag_specifications
+                )
+            );
             index += 1;
         }
+        instantiated_specifications
     }
 }
 
 // TODO: move to bus?
-fn generate_bus_symbols(dag: &mut DAG, state: State, config: &SignalConfig, bus_connexions: &HashMap<String, BusConnexion>, buses: &Vec<ExecutedBus>) {
+fn generate_bus_symbols(
+    dag: &mut DAG, 
+    state: State, 
+    config: &SignalConfig, 
+    bus_connexions: &HashMap<String, BusConnexion>, 
+    buses: &Vec<ExecutedBus>,
+    signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
+    signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
+    tag_specifications: &TagSpecificationInfo
+) -> LinkedList<Expression>{
     let bus_connection = bus_connexions.get(&state.basic_name).unwrap();
     let ex_bus2 = buses.get(bus_connection.inspect.goes_to).unwrap();
+
+    let mut instantiated_specifications = LinkedList::new();
+    
     if state.dim == config.dimensions.len() {
         for info_field in ex_bus2.fields(){
             let signal_name = format!("{}.{}",state.name, info_field.name);
-            let state = State { basic_name: info_field.name.clone(), name: signal_name, dim: 0 };
-            let config = SignalConfig { signal_type: config.signal_type, dimensions: &info_field.length, is_public: config.is_public };
+            let mut signal_field_names = state.signal_field_names.clone();
+            signal_field_names.push(info_field.name.clone());
+            let state = State { 
+                basic_name: info_field.name.clone(), 
+                signal_field_names,
+                name: signal_name, 
+                dim: 0 
+            };
+            let config = SignalConfig { 
+                signal_type: config.signal_type, 
+                dimensions: &info_field.length, 
+                is_public: config.is_public,
+            };
             if info_field.is_bus{
-                generate_bus_symbols(dag, state, &config, ex_bus2.bus_connexions(), buses);
+                instantiated_specifications.append(
+                    &mut generate_bus_symbols(
+                        dag, 
+                        state, 
+                        &config, 
+                        ex_bus2.bus_connexions(), 
+                        buses,
+                        signal_to_tags,
+                        signal_to_tags_with_value,
+                        tag_specifications
+                    )
+                );
             } else{
-                generate_symbols(dag, state, &config);
+                instantiated_specifications.append(
+                    &mut generate_symbols(
+                        dag, 
+                        state, 
+                        &config,
+                        signal_to_tags,
+                        signal_to_tags_with_value,
+                        tag_specifications
+                    )
+                );
             }
         }
+
+        // also generate the specifications for the complete bus
+        let tags = signal_to_tags.get(&state.signal_field_names);
+        match tags{
+            Some(list_tags)=>{
+                for tag in list_tags{
+                    let tag_specification = tag_specifications.get(tag);
+                    match tag_specification{
+                        Some(spec)=>{
+                            let condition = spec.get_condition();
+                            instantiated_specifications.push_back(
+                                instantiate_expression(
+                                    condition,
+                                    &state.name,
+                                    &state.signal_field_names,
+                                    signal_to_tags_with_value
+                                )
+                            );
+                        },
+                        None =>{
+                            // no need to add
+                        }
+                    }
+                }
+            },
+            None =>{
+                // no tags associated
+            }
+        }
+
 
     } else {
         let mut index = 0;
         while index < config.dimensions[state.dim] {
             let new_state =
-                State { basic_name: state.basic_name.clone(), name: format!("{}[{}]", state.name, index), dim: state.dim + 1 };
-            generate_bus_symbols(dag, new_state, config, bus_connexions, buses);
+                State { 
+                    basic_name: state.basic_name.clone(), 
+                    name: format!("{}[{}]", state.name, index), 
+                    dim: state.dim + 1,
+                    signal_field_names: state.signal_field_names.clone()
+                };
+            instantiated_specifications.append(
+                &mut generate_bus_symbols(
+                    dag, 
+                    new_state, 
+                    config, 
+                    bus_connexions, 
+                    buses,
+                    signal_to_tags,
+                    signal_to_tags_with_value,
+                    tag_specifications
+                )
+            );
             index += 1;
         }
+    }
+    instantiated_specifications
+
+}
+
+
+
+fn instantiate_expression(
+    expression: &Expression,
+    signal_name: &String,
+    signal_field_names: &Vec<String>,
+    signal_to_tags_values: &HashMap<Vec<String>, BigInt>,
+) -> Expression{
+
+    use program_structure::ast::Expression::{Number, Variable, InfixOp, PrefixOp};
+    use program_structure::ast::Access;
+
+    match expression{
+        Number(_,_) => {
+            expression.clone()
+        },
+        Variable { meta, access, .. } => {
+            // todo -> apply type analysis and get info about if it is tag
+            //if meta.get_type_knowledge().is_tag() {
+                // in case it is a tag get its value
+                let mut complete_signal_name = signal_field_names.clone();
+                let mut string_name = signal_name.clone();
+
+
+                for ac in access{
+                    match ac{
+                        Access::ComponentAccess(value)=>{
+                            complete_signal_name.push(value.clone());
+                            string_name = format!("{}.{}", string_name, value);
+                        },
+                        Access::ArrayAccess(expr)=>{
+
+                            match expr{
+                                Number(_, value)=>{
+                                    string_name = format!("{}[{}]", string_name, value);
+                                },
+                                _ => unreachable!()
+                            }
+
+                        }
+                    }
+                }
+
+                
+
+                let value = signal_to_tags_values.get(&complete_signal_name);
+
+                match value{
+                    // TODO: print pretty error
+                    None => //unreachable!("The tag does not have a value"),
+                    {
+                        // case not tag, dont give value, build the signal name
+                        Expression:: Variable{meta: meta.clone(), name: string_name, access: Vec::new()}
+                    }
+                    Some(value) => {
+                        Number(meta.clone(), value.clone())
+                    }
+                }
+
+            //} else {
+                // in other case instantiate
+            //    Expression:: Variable{meta: meta.clone(), name: signal_name.clone(), access: access.clone()}
+            //}
+        }
+        InfixOp { meta, lhe, infix_op, rhe, .. } => {
+            let l_value = instantiate_expression(lhe, signal_name, signal_field_names, signal_to_tags_values);
+            let r_value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values);
+            Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        }
+        PrefixOp {meta,  prefix_op, rhe, .. } => {
+            let value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values);
+            Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        }
+
+        _ => {unreachable!("The rest of the expressions are not valid."); }
     }
 }
 
@@ -626,7 +1011,12 @@ fn generate_ordered_symbols(dag: &mut DAG, state: State, config: &OrderedSignalC
         let mut index = 0;
         while index < config.dimensions[state.dim] {
             let new_state =
-                State { basic_name: state.basic_name.clone(), name: format!("{}[{}]", state.name, index), dim: state.dim + 1 };
+                State { 
+                    basic_name: state.basic_name.clone(), 
+                    name: format!("{}[{}]", state.name, index), 
+                    dim: state.dim + 1,
+                    signal_field_names: Vec::new(),// no needed in this case
+                };
             generate_ordered_symbols(dag, new_state, config);
             index += 1;
         }
@@ -640,7 +1030,12 @@ fn generate_ordered_bus_symbols(dag: &mut DAG, state: State, config: &OrderedSig
     if state.dim == config.dimensions.len() {
         for info_field in ex_bus2.fields(){
             let signal_name = format!("{}.{}",state.name, info_field.name);
-            let state = State { basic_name: info_field.name.clone(), name: signal_name, dim: 0 };
+            let state = State { 
+                basic_name: info_field.name.clone(), 
+                name: signal_name, 
+                dim: 0,
+                signal_field_names: Vec::new(),// no needed in this case
+            };
             let config = OrderedSignalConfig {dimensions: &info_field.length };
             if info_field.is_bus{
                 generate_ordered_bus_symbols(dag, state, &config, ex_bus2.bus_connexions(), buses);
@@ -653,7 +1048,12 @@ fn generate_ordered_bus_symbols(dag: &mut DAG, state: State, config: &OrderedSig
         let mut index = 0;
         while index < config.dimensions[state.dim] {
             let new_state =
-                State { basic_name: state.basic_name.clone(), name: format!("{}[{}]", state.name, index), dim: state.dim + 1 };
+                State { 
+                    basic_name: state.basic_name.clone(), 
+                    name: format!("{}[{}]", state.name, index), 
+                    dim: state.dim + 1,
+                    signal_field_names: Vec::new(),// no needed in this case
+                };
             generate_ordered_bus_symbols(dag, new_state, config, bus_connexions, buses);
             index += 1;
         }

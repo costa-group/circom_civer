@@ -1,5 +1,6 @@
 use crate::expression_builders::build_anonymous_component;
 
+use std::collections::HashMap;
 use super::ast::*;
 
 impl Expression {
@@ -235,6 +236,70 @@ impl Expression {
             ParallelOp { rhe, .. } => {rhe.contains_tuple()},
          }
     }
+
+    pub fn apply_offset(&self, offset: usize) -> Expression{
+        use Expression::*;
+        match self{
+            Number(_,_) => {
+                self.clone()
+            }
+            Variable { meta, name, access } => {
+                let value_pos = name.parse::<usize>();
+                match value_pos{
+                    Ok(v) => Expression:: Variable{meta: meta.clone(), name: format!("{}", v + offset), access: access.clone()},
+                    Err(_) => unreachable!("Should be a usize, not a string"),
+                }    
+                
+            }
+            InfixOp { meta, lhe, infix_op, rhe, .. } => {
+                let l_value = lhe.apply_offset(offset);
+                let r_value = rhe.apply_offset(offset);
+                Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        
+            }
+            PrefixOp {meta,  prefix_op, rhe, .. } => {
+                let value = rhe.apply_offset(offset);
+                Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        
+            }
+            
+            _ => {unreachable!("The rest of the expressions are not valid."); }
+        }
+    }
+
+
+    pub fn apply_correspondence(&self, correspondence: &HashMap<String, usize>) -> Expression{
+        use Expression::*;
+
+        match self{
+            Number(_,_) => {
+                self.clone()
+            }
+            Variable { meta, name, access } => {
+                match correspondence.get(name){
+                    Some(pos) => Expression:: Variable{meta: meta.clone(), name: format!("{}", pos), access: access.clone()},
+                    None => unreachable!(),
+    
+                }
+            }
+            InfixOp { meta, lhe, infix_op, rhe, .. } => {
+                let l_value = lhe.apply_correspondence(correspondence);
+                let r_value = rhe.apply_correspondence(correspondence);
+                Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+        
+            }
+            PrefixOp {meta,  prefix_op, rhe, .. } => {
+                let value = rhe.apply_correspondence(correspondence);
+                Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        
+            }
+            
+            _ => {unreachable!("The rest of the expressions are not valid."); }
+        }
+    }
+
+
+
 }
 
 impl FillMeta for Expression {

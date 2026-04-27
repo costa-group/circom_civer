@@ -144,6 +144,12 @@ pub ParseDefinition : Definition = {
         }
     },
 
+    <s:@L> "spec_tag" "{" <tag: IDENTIFIER> "}" <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
+    => build_tag_specification(Meta::new(s,e), tag, None, signal, ins),
+
+    <s:@L> "spec_tag" "{" <tag: IDENTIFIER> "}" <signal_type: IDENTIFIER> <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
+    => build_tag_specification(Meta::new(s,e), tag,  Some(signal_type),  signal, ins)
+
 };
 
 

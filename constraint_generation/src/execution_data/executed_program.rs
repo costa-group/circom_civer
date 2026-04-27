@@ -176,7 +176,7 @@ impl ExecutedProgram {
         }
 
         for exe in &mut self.model {
-            exe.insert_in_dag(&mut dag, &self.model_buses);
+            exe.insert_in_dag(&mut dag, &self.model_buses, &program.tag_specifications);
         }
 
         let mut wrapped_buses_table = vec![None; self.model_buses.len()];

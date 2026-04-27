@@ -163,6 +163,13 @@ pub enum Definition {
         arg_location: FileLocation,
         body: Statement,
     },
+    TagSpecification {
+        meta: Meta,
+        tag: String,
+        signal_type: Option<String>,
+        signal: String,
+        condition: Expression
+    }
 }
 pub fn build_template(
     meta: Meta,
@@ -195,6 +202,16 @@ pub fn build_bus(
     body: Statement,
 ) -> Definition {
     Definition::Bus { meta, name, args, arg_location, body }
+}
+
+pub fn build_tag_specification(
+    meta: Meta,
+    tag: String,
+    signal_type: Option<String>,
+    signal: String,
+    condition: Expression
+) -> Definition {
+    Definition::TagSpecification { meta, tag, signal_type, signal, condition }
 }
 
 #[derive(Clone)]

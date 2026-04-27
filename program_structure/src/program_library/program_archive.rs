@@ -3,6 +3,7 @@ use super::file_definition::{FileID, FileLibrary};
 use super::function_data::{FunctionData, FunctionInfo};
 use super::program_merger::Merger;
 use super::template_data::{TemplateData, TemplateInfo};
+use super::tag_specification_data::{TagSpecificationData, TagSpecificationInfo};
 use super::bus_data::{BusData, BusInfo};
 use crate::abstract_syntax_tree::ast::FillMeta;
 use std::collections::HashSet;
@@ -17,10 +18,12 @@ pub struct ProgramArchive {
     pub file_library: FileLibrary,
     pub functions: FunctionInfo,
     pub templates: TemplateInfo,
+    pub tag_specifications: TagSpecificationInfo,
     pub buses: BusInfo,
     pub function_keys: HashSet<String>,
     pub template_keys: HashSet<String>,
     pub bus_keys: HashSet<String>,
+    pub tag_specifications_keys: HashSet<String>,
     pub public_inputs: Vec<String>,
     pub initial_template_call: Expression,
     pub custom_gates: bool,
@@ -40,10 +43,12 @@ impl ProgramArchive {
                 reports.append(&mut errs);
             }
         }
-        let (mut fresh_id, functions, templates, buses) = merger.decompose();
+        let (mut fresh_id, functions, templates, buses, tag_specifications) = merger.decompose();
         let mut function_keys = HashSet::new();
         let mut template_keys = HashSet::new();
         let mut bus_keys = HashSet::new();
+        let mut tag_specifications_keys = HashSet::new();
+
 
         for key in functions.keys() {
             function_keys.insert(key.clone());
@@ -53,6 +58,9 @@ impl ProgramArchive {
         }
         for key in buses.keys() {
             bus_keys.insert(key.clone());
+        }
+        for key in tag_specifications.keys() {
+            tag_specifications_keys.insert(key.clone());
         }
         let (public_inputs, mut initial_template_call) = main_component;
         initial_template_call.fill(file_id_main, &mut fresh_id);
@@ -64,11 +72,13 @@ impl ProgramArchive {
                 functions,
                 templates,
                 buses,
+                tag_specifications,
                 public_inputs,
                 initial_template_call,
                 function_keys,
                 template_keys,
                 bus_keys,
+                tag_specifications_keys,
                 custom_gates,
             })
         } else {
@@ -157,6 +167,32 @@ impl ProgramArchive {
     pub fn remove_bus(&mut self, id: &str) {
         self.bus_keys.remove(id);
         self.buses.remove(id);
+    }
+
+    //specifications functions
+    pub fn contains_tag_specification(&self, spec_name: &str) -> bool {
+        self.tag_specifications.contains_key(spec_name)
+    }
+    pub fn get_tag_specification_data(&self, spec_name: &str) -> &TagSpecificationData {
+        assert!(self.contains_tag_specification(spec_name));
+        self.tag_specifications.get(spec_name).unwrap()
+    }
+    pub fn get_mut_tag_specification_data(&mut self, spec_name: &str) -> &mut TagSpecificationData {
+        assert!(self.contains_tag_specification(spec_name));
+        self.tag_specifications.get_mut(spec_name).unwrap()
+    }
+    pub fn get_tag_specification_names(&self) -> &HashSet<String> {
+        &self.tag_specifications_keys
+    }
+    pub fn get_tag_specifications(&self) -> &TagSpecificationInfo {
+        &self.tag_specifications
+    }
+    pub fn get_mut_tag_specifications(&mut self) -> &mut TagSpecificationInfo {
+        &mut self.tag_specifications
+    }
+    pub fn remove_tag_specification(&mut self, id: &str) {
+        self.tag_specifications_keys.remove(id);
+        self.tag_specifications.remove(id);
     }
 
     //main_component functions

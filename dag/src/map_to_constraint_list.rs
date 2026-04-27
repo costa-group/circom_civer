@@ -1,7 +1,10 @@
+
 use super::{Constraint, Edge, Node, SimplificationFlags, Tree, DAG};
 use constraint_list::{ConstraintList, DAGEncoding, EncodingEdge, EncodingNode, SignalInfo, Simplifier};
 use program_structure::utils::constants::UsefulConstants;
 use std::collections::{HashSet, LinkedList};
+use crate::modular_verification::VerificationTree;
+
 #[derive(Default)]
 struct CHolder {
     linear: LinkedList<Constraint>,
@@ -144,4 +147,47 @@ pub fn map(dag: DAG, flags: SimplificationFlags) -> ConstraintList {
         json_substitutions: flags.json_substitutions,
     }
     .simplify_constraints()
+}
+
+
+
+
+fn map_tree_constraints(
+    tree: &Tree,
+    tree_constraints: &mut VerificationTree,
+) {
+
+    tree_constraints.template_name = tree.dag.nodes[tree.node_id].template_name.clone();
+    tree_constraints.pretty_template_name = tree.dag.nodes[tree.node_id].pretty_template_name.clone();
+    tree_constraints.is_custom = tree.dag.nodes[tree.node_id].is_custom_gate;
+    tree_constraints.number_signals = tree.signals.len();
+    tree_constraints.number_inputs = tree.dag.nodes[tree.node_id].inputs_length;
+    tree_constraints.number_outputs = tree.dag.nodes[tree.node_id].outputs_length;
+    tree_constraints.specification_preconditions = tree.specification_preconditions.clone();
+    tree_constraints.specification_intermediates = tree.specification_intermediates.clone();
+    tree_constraints.specification_postconditions = tree.specification_postconditions.clone();
+    if tree_constraints.number_signals > 0{
+        tree_constraints.initial_signal = tree.signals[0];
+    }
+
+    tree_constraints.node_id = tree.node_id;
+
+    for constraint in &tree.constraints {
+        tree_constraints.constraints.push(constraint.clone());
+    }
+
+    for edge in Tree::get_edges(tree) {
+        let subtree = Tree::go_to_subtree(tree, edge);
+        let mut subtree_constraints = VerificationTree::default();
+        map_tree_constraints(&subtree, &mut subtree_constraints);
+        tree_constraints.subcomponents.push_back(subtree_constraints);
+    }
+}
+
+pub fn map_to_constraint_tree(dag: &DAG) -> VerificationTree {
+
+    let mut tree_constraints = VerificationTree::default();
+    map_tree_constraints(&Tree::new(&dag), &mut tree_constraints);
+    
+    tree_constraints
 }

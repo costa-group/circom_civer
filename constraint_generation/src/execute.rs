@@ -6,7 +6,7 @@ use super::environment_utils::{
         environment_shortcut_add_bus_output,
         environment_shortcut_add_variable, ExecutionEnvironment, ExecutionEnvironmentError,
         environment_check_all_components_assigned,
-        environment_get_value_tags_bus, environment_get_value_tags_signal,
+        environment_get_tags_bus, environment_get_tags_signal,
         environment_check_available_symbol
     
     },
@@ -3473,19 +3473,37 @@ fn execute_template_call(
 
 
         // we add the tags to the executed template
-        // TODO: improve and remove clone
-        let outputs = new_node.outputs.clone();
-        for output in outputs{
+        let mut signals_to_add = Vec::new();
+        for output in &new_node.outputs{
             let to_add = if output.is_bus{
-                environment_get_value_tags_bus(&runtime.environment, &output.name)
+                environment_get_tags_bus(&runtime.environment, &output.name)
             } else{
-                environment_get_value_tags_signal(&runtime.environment, &output.name)
+                environment_get_tags_signal(&runtime.environment, &output.name)
             };
-            for (name, value) in to_add{
-                new_node.add_tag_signal(name, value);
+            signals_to_add.push(to_add);
+        } 
+        for input in &new_node.inputs{
+            let to_add = if input.is_bus{
+                environment_get_tags_bus(&runtime.environment, &input.name)
+            } else{
+                environment_get_tags_signal(&runtime.environment, &input.name)
+            };
+            signals_to_add.push(to_add);
+        } 
+        for s in &new_node.intermediates{
+            let to_add = if s.is_bus{
+                environment_get_tags_bus(&runtime.environment, &s.name)
+            } else{
+                environment_get_tags_signal(&runtime.environment, &s.name)
+            };
+            signals_to_add.push(to_add);
+        }    
+
+        for to_add in signals_to_add{
+            for (name, tag, value) in to_add{
+                new_node.add_tag_signal(name, tag, value);
             }
-        }   
-        
+        }
 
         let analysis = std::mem::replace(&mut runtime.analysis, analysis);
         let node_pointer = runtime.exec_program.add_node_to_scheme(new_node, analysis);

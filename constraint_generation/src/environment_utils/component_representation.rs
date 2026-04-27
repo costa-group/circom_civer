@@ -195,7 +195,7 @@ impl ComponentRepresentation {
 
         fn insert_tags_output(node: &crate::execution_data::ExecutedTemplate, component: &mut ComponentRepresentation) {
             
-            for (tag_name, value) in &node.signal_to_tags{
+            for (tag_name, value) in &node.signal_to_tags_with_value{
                 if component.outputs_tags.contains_key(&tag_name[0]){
                     // in this case we have to store the value
                     let mut info_output_tags = component.outputs_tags.get_mut(&tag_name[0]).unwrap();
@@ -203,6 +203,7 @@ impl ComponentRepresentation {
                         info_output_tags = info_output_tags.fields.as_mut().unwrap().get_mut(&tag_name[i]).unwrap();
                     }
                     info_output_tags.tags.insert(tag_name.last().unwrap().clone(), Some(value.clone()));
+                    
                 }
             }
             

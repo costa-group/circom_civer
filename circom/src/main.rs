@@ -43,7 +43,12 @@ fn start() -> Result<(), ()> {
         r1cs: user_input.r1cs_file().to_string(),
         json_constraints: user_input.json_constraints_file().to_string(),
         json_substitutions: user_input.json_substitutions_file().to_string(),
-        prime: user_input.prime(),        
+        prime: user_input.prime(),       
+        check_tags: user_input.check_tags(),
+        check_safety: user_input.check_safety(),
+        civer_file: user_input.civer_file().to_string(),
+        verification_timeout: user_input.verification_timeout(),
+        solver: user_input.solver().to_string()
     };
     let circuit = execution_user::execute_project(program_archive, config)?;
     let compilation_config = CompilerConfig {

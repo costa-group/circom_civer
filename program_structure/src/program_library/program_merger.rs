@@ -4,6 +4,7 @@ use super::error_definition::Report;
 use super::file_definition::FileID;
 use super::function_data::{FunctionData, FunctionInfo};
 use super::template_data::{TemplateData, TemplateInfo};
+use super::tag_specification_data::{TagSpecificationData, TagSpecificationInfo};
 use super::bus_data::{BusData, BusInfo};
 
 pub struct Merger {
@@ -11,6 +12,7 @@ pub struct Merger {
     function_info: FunctionInfo,
     template_info: TemplateInfo,
     bus_info: BusInfo,
+    tag_specification_info: TagSpecificationInfo,
 }
 impl Default for Merger {
     fn default() -> Self {
@@ -18,7 +20,8 @@ impl Default for Merger {
             fresh_id: 0,
             function_info: FunctionInfo::new(),
             template_info: TemplateInfo::new(),
-            bus_info: BusInfo::new()
+            bus_info: BusInfo::new(),
+            tag_specification_info: TagSpecificationInfo::new()
         }
     }
 }
@@ -85,7 +88,24 @@ impl Merger {
                         self.get_mut_bus_info().insert(name.clone(), new_data);
                         (Option::None, meta)
                     }
+                },
+                Definition::TagSpecification { meta, tag: name, signal_type, signal, condition } => {
+                    if self.contains_function(&name) || self.contains_template(&name) || self.contains_tag_specification(&name)  {
+                        (Option::Some(name), meta)
+                    } else {
+                        let new_data = TagSpecificationData::new(
+                            file_id,
+                            &mut self.fresh_id,
+                            name.clone(),
+                            signal_type,
+                            signal,
+                            condition,
+                        );
+                        self.get_mut_tag_specification_info().insert(name, new_data);
+                        (Option::None, meta)
+                    }
                 }
+
             };
             if let Option::Some(definition_name) = name {
                 let mut report = Report::error(
@@ -132,8 +152,18 @@ impl Merger {
         &mut self.bus_info
     }
 
+    pub fn contains_tag_specification(&self, tag_name: &str) -> bool {
+        self.get_tag_specification_info().contains_key(tag_name)
+    }
+    fn get_tag_specification_info(&self) -> &TagSpecificationInfo {
+        &self.tag_specification_info
+    }
+    fn get_mut_tag_specification_info(&mut self) -> &mut TagSpecificationInfo {
+        &mut self.tag_specification_info
+    }
 
-    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo, BusInfo) {
-        (self.fresh_id, self.function_info, self.template_info, self.bus_info)
+
+    pub fn decompose(self) -> (usize, FunctionInfo, TemplateInfo, BusInfo, TagSpecificationInfo) {
+        (self.fresh_id, self.function_info, self.template_info, self.bus_info, self.tag_specification_info)
     }
 }

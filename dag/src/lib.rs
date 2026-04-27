@@ -3,8 +3,10 @@ mod json_porting;
 mod map_to_constraint_list;
 mod r1cs_porting;
 mod sym_porting;
+pub mod modular_verification;
 mod witness_producer;
 use circom_algebra::num_bigint::BigInt;
+use crate::modular_verification::VerificationTree;
 use constraint_list::ConstraintList;
 use constraint_writers::debug_writer::DebugWriter;
 use constraint_writers::ConstraintExporter;
@@ -15,6 +17,8 @@ type Signal = usize;
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 type Substitution = circom_algebra::algebra::Substitution<usize>;
 type Range = std::ops::Range<usize>;
+
+use program_structure::ast::Expression;
 
 pub type FastSubAccess = HashMap<usize, Substitution>;
 
@@ -28,6 +32,10 @@ pub struct Tree<'a> {
     pub forbidden: HashSet<usize>,
     pub id_to_name: HashMap<usize, String>,
     pub constraints: Vec<Constraint>,
+
+    specification_preconditions: Vec<Expression>,
+    specification_intermediates: Vec<Expression>,
+    specification_postconditions: Vec<Expression>,
 }
 
 impl<'a> Tree<'a> {
@@ -50,7 +58,24 @@ impl<'a> Tree<'a> {
             }
         }
         signals.sort();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
+        let specification_preconditions = root.specification_preconditions.clone();
+        let specification_intermediates = root.specification_intermediates.clone();
+        let specification_postconditions = root.specification_postconditions.clone();
+
+        Tree { 
+            field, 
+            dag, 
+            path, 
+            offset, 
+            node_id, 
+            signals, 
+            forbidden, 
+            id_to_name, 
+            constraints,
+            specification_preconditions,
+            specification_intermediates,
+            specification_postconditions
+        }
     }
 
     pub fn go_to_subtree(current: &'a Tree, edge: &Edge) -> Tree<'a> {
@@ -76,7 +101,36 @@ impl<'a> Tree<'a> {
             .filter(|c| !c.is_empty())
             .map(|c| Constraint::apply_offset(c, offset))
             .collect();
-        Tree { field, dag, path, offset, node_id, signals, forbidden, id_to_name, constraints }
+        let specification_preconditions: Vec<_> = node
+            .specification_preconditions
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect(); 
+        let specification_intermediates: Vec<_> = node
+            .specification_intermediates
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect(); 
+        let specification_postconditions: Vec<_> = node
+            .specification_postconditions
+            .iter()
+            .map(|c| c.apply_offset(offset))
+            .collect(); 
+
+        Tree { 
+            field, 
+            dag, 
+            path, 
+            offset, 
+            node_id, 
+            signals, 
+            forbidden, 
+            id_to_name, 
+            constraints,
+            specification_preconditions,
+            specification_intermediates,
+            specification_postconditions
+        }    
     }
 
     pub fn get_edges(tree: &'a Tree) -> &'a Vec<Edge> {
@@ -135,6 +189,7 @@ impl Edge {
 pub struct Node {
     entry: Edge,
     template_name: String,
+    pretty_template_name: String,
     parameters: Vec<BigInt>,
     number_of_signals: usize,
     number_of_components: usize,
@@ -154,18 +209,25 @@ pub struct Node {
     has_parallel_sub_cmp: bool,
     is_custom_gate: bool,
     number_of_subcomponents_indexes: usize,
+
+    specification_preconditions: Vec<Expression>,
+    specification_intermediates: Vec<Expression>,
+    specification_postconditions: Vec<Expression>,
+
 }
 
 impl Node {
     fn new(
         id: usize,
         template_name: String,
+        pretty_template_name: String,
         parameters: Vec<BigInt>,
         is_parallel: bool,
         is_custom_gate: bool
     ) -> Node {
         Node {
             template_name, entry: Edge::new_entry(id),
+            pretty_template_name,
             parameters,
             number_of_components: 1,
             is_parallel,
@@ -211,6 +273,18 @@ impl Node {
         self.number_of_signals += 1;
         self.entry.out_number += 1;
         self.intermediates_length += 1;
+    }
+
+    fn add_specification_precondition(&mut self, condition: Expression) {
+        self.specification_preconditions.push(condition);
+    }
+
+    fn add_specification_intermediate(&mut self, condition: Expression) {
+        self.specification_intermediates.push(condition);
+    }
+
+    fn add_specification_postcondition(&mut self, condition: Expression) {
+        self.specification_postconditions.push(condition);
     }
 
     fn add_ordered_signal(&mut self, name: String){
@@ -373,13 +447,14 @@ impl DAG {
     pub fn add_node(
         &mut self,
         template_name: String,
+        pretty_template_name: String,
         parameters: Vec<BigInt>,
         is_parallel: bool,
         is_custom_gate: bool
     ) -> usize {
         let id = self.nodes.len();
         self.nodes.push(
-            Node::new(id, template_name, parameters, is_parallel, is_custom_gate)
+            Node::new(id, template_name, pretty_template_name, parameters, is_parallel, is_custom_gate)
         );
         self.adjacency.push(vec![]);
         id
@@ -406,6 +481,24 @@ impl DAG {
     pub fn add_ordered_signal(&mut self, name: String) {
         if let Option::Some(node) = self.get_mut_main() {
             node.add_ordered_signal(name);
+        }
+    }
+
+    pub fn add_specification_precondition(&mut self, cond: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_specification_precondition(cond);
+        }
+    }
+
+    pub fn add_specification_intermediate(&mut self, cond: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_specification_intermediate(cond);
+        }
+    }
+
+    pub fn add_specification_postcondition(&mut self, cond: Expression) {
+        if let Option::Some(node) = self.get_mut_main() {
+            node.add_specification_postcondition(cond);
         }
     }
 
@@ -540,6 +633,10 @@ impl DAG {
 
     pub fn map_to_list(self, flags: SimplificationFlags) -> ConstraintList {
         map_to_constraint_list::map(self, flags)
+    }
+
+    pub fn map_to_verification_tree(&self) -> VerificationTree {
+        map_to_constraint_list::map_to_constraint_tree(&self)
     }
 }
 

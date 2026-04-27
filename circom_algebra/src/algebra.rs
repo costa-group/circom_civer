@@ -108,6 +108,43 @@ impl<C: Default + Clone + Display + Hash + Eq> ArithmeticExpression<C> {
         string_coefficients
     }
 
+        // printing utils
+    fn coefficients_to_smt2(coefficients: &HashMap<C, BigInt>, signal_to_smt2_name: &HashMap<C,String>) -> String {
+        if coefficients.is_empty(){
+            return "".to_string();
+        }
+
+        let mut string_coefficients= if coefficients.len() > 1{
+            "(ff.add ".to_string()
+        }else{
+            "".to_string()
+        };
+
+        for (signal, value) in coefficients {
+            let component_string = if value.is_zero() {
+                "".to_string()
+            } else if signal.eq(&ArithmeticExpression::constant_coefficient()) {
+                format!("(as ff{} FF0) ", value.to_str_radix(10))
+            } else {
+                if *value == BigInt::from(1){
+                    format!("{} ", 
+                        signal_to_smt2_name[signal]                    
+                    )
+                } else{
+                    format!("(ff.mul {} (as ff{} FF0)) ", 
+                        signal_to_smt2_name[signal], 
+                        value.to_str_radix(10)
+                    )
+                }
+            };
+            string_coefficients.push_str(component_string.as_str());
+        }
+        if coefficients.len() > 1{
+          string_coefficients.push(')');
+        }
+        string_coefficients
+    }
+
     // constraint generation utils
     // transforms constraints into a constraint, None if the expression was non-quadratic
     pub fn transform_expression_to_constraint_form(
@@ -965,6 +1002,7 @@ impl<C: Default + Clone + Display + Hash + Eq> Substitution<C> {
         }
         signals
     }
+    
 
     pub fn rmv_zero_coefficients(substitution: &mut Substitution<C>) {
         substitution.to = remove_zero_value_coefficients(std::mem::take(&mut substitution.to))
@@ -1105,6 +1143,22 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
         signals
     }
 
+     pub fn take_only_linear_signals(&self) -> HashSet<&C> {
+        let cc: C = Constraint::constant_coefficient();
+        let mut signals = HashSet::new();
+        for signal in self.c().keys() {
+            signals.insert(signal);
+        }
+        for signal in self.a().keys() {
+            signals.remove(signal);
+        }
+        for signal in self.b().keys() {
+            signals.remove(signal);
+        }
+        HashSet::remove(&mut signals, &cc);
+        signals
+    }
+
     fn clear_signal(
         mut symbols: HashMap<C, BigInt>,
         key: &C,
@@ -1191,7 +1245,30 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
             ArithmeticExpression::Linear { coefficients: self.b },
             ArithmeticExpression::Linear { coefficients: self.c }
         )
+    }    
+    
+    pub fn constraint_to_smt2(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
+        
+        let right_side = if self.a.is_empty() || self.b.is_empty(){
+            ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+        } else{
+            let mul = format!("(ff.mul {} {})",
+                ArithmeticExpression::coefficients_to_smt2(self.a(),signal_to_smt2_name),
+                ArithmeticExpression::coefficients_to_smt2(self.b(),signal_to_smt2_name)
+            );
+            if self.c.is_empty(){
+                mul
+            } else{
+                format!("(ff.add {} {})",
+                    mul,
+                    ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
+                )
+            }
+        };
+        format!("(= (as ff0 FF0) {})", right_side)
     }
+
+
 
 }
 

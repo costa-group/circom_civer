@@ -508,3 +508,47 @@ fn analyze_expression(
         _ => {}
     }
 }
+
+pub fn tag_specification_symbol_analysis(
+    tag_specification_name: &str,
+    program_archive: &ProgramArchive,
+) -> Result<(), ReportCollection> {
+    let specification_data = program_archive.get_tag_specification_data(tag_specification_name); 
+    let file_id = specification_data.get_file_id();
+    let mut environment = Environment::new();
+    environment.push(Block::new());
+    add_symbol_to_block(&mut environment, specification_data.get_signal());
+    add_symbol_to_block(&mut environment, specification_data.get_tag());
+    let mut reports = Vec::new();
+
+    // check the symbol correctness of the declaration
+    let signal_type = specification_data.get_signal_type();
+    let exp =  specification_data.get_condition();
+
+
+    match signal_type{
+        None =>{
+            // in case it is a signal there is no need to check
+        },
+        Some(signal_type) => {
+            if !program_archive.get_buses().contains_key(signal_type) {
+                let mut report =
+                    Report::error(format!("Calling symbol"), ReportCode::NonExistentSymbol);
+                report.add_primary(
+                    file_definition::generate_file_location(exp.get_meta().get_start(), exp.get_meta().get_end()),
+                    file_id.clone(),
+                    format!("Calling unknown symbol"),
+                );
+                reports.push(report);
+            }
+        }
+    }
+
+    // check the symbol correctness of the conditions
+    analyze_expression(&exp, file_id, program_archive.get_functions(), program_archive.get_templates(), program_archive.get_buses(), &mut reports, &environment);
+    if reports.is_empty() {
+        Result::Ok(())
+    } else {
+        Result::Err(reports)
+    }
+}

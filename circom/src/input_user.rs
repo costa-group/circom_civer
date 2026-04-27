@@ -35,7 +35,13 @@ pub struct Input {
     pub flag_verbose: bool,
     pub flag_no_init: bool,
     pub prime: String,
-    pub link_libraries : Vec<PathBuf>
+    pub link_libraries : Vec<PathBuf>,
+
+    pub solver: String,
+    pub out_civer_name: PathBuf,
+    pub check_tags: bool,
+    pub check_safety: bool,
+    pub verification_timeout: u64,
 }
 
 
@@ -47,6 +53,8 @@ const JS: &'static str = "js";
 const DAT: &'static str = "dat";
 const SYM: &'static str = "sym";
 const JSON: &'static str = "json";
+const CIVER: &'static str = "civer";
+
 
 
 impl Input {
@@ -73,6 +81,8 @@ impl Input {
             //field: P_BN128,
             input_program: input,
             out_r1cs: Input::build_output(&output_path, &file_name, R1CS),
+            out_civer_name: Input::build_output(&output_path, &file_name, CIVER),
+
             out_wat_code: Input::build_output(&output_js_path, &file_name, WAT),
             out_wasm_code: Input::build_output(&output_js_path, &file_name, WASM),
 	        out_js_folder: output_js_path.clone(),
@@ -112,6 +122,11 @@ impl Input {
             flag_verbose: input_processing::get_flag_verbose(&matches), 
             flag_no_init: input_processing::get_flag_no_init(&matches), 
             prime: input_processing::get_prime(&matches)?,
+            check_tags: input_processing::get_check_tags(&matches),
+            check_safety: input_processing::get_check_safety(&matches),
+            solver: input_processing::get_solver(&matches)?,
+            verification_timeout: input_processing::get_verification_timeout(&matches),
+
             link_libraries
         })
     }
@@ -135,6 +150,9 @@ impl Input {
 
     pub fn input_file(&self) -> &str {
         &self.input_program.to_str().unwrap()
+    }
+    pub fn civer_file(&self) -> &str {
+        &self.out_civer_name.to_str().unwrap()
     }
     pub fn r1cs_file(&self) -> &str {
         self.out_r1cs.to_str().unwrap()
@@ -233,6 +251,18 @@ impl Input {
     }
     pub fn prime(&self) -> String{
         self.prime.clone()
+    }
+    pub fn check_tags(&self) -> bool {
+        self.check_tags
+    }
+    pub fn check_safety(&self) -> bool {
+        self.check_safety
+    }
+    pub fn verification_timeout(&self) -> u64 {
+        self.verification_timeout
+    }
+    pub fn solver(&self)->String{
+        self.solver.clone()
     }
 }
 mod input_processing {
@@ -368,6 +398,21 @@ mod input_processing {
     pub fn get_flag_old_heuristics(matches: &ArgMatches) -> bool {
         matches.is_present("flag_old_heuristics")
     }
+    pub fn get_check_tags(matches: &ArgMatches) -> bool {
+        matches.is_present("check_tags")
+    }
+    pub fn get_check_safety(matches: &ArgMatches) -> bool {
+        matches.is_present("check_safety")
+    }
+    pub fn get_verification_timeout(matches: &ArgMatches) -> u64 {
+        let has_max_rule_2 = matches.is_present("verification_timeout");
+        if has_max_rule_2{
+            let max_value = matches.value_of("verification").unwrap();
+            u64::from_str_radix(max_value, 10).unwrap()
+        } else{
+            5000
+        }
+    }
     pub fn get_prime(matches: &ArgMatches) -> Result<String, ()> {
         
         match matches.is_present("prime"){
@@ -391,6 +436,29 @@ mod input_processing {
                }
                
             false => Ok(String::from("bn128")),
+        }
+    }
+
+    pub fn get_solver(matches: &ArgMatches) -> Result<String, ()> {
+        
+        match matches.is_present("solver"){
+            true => 
+               {
+                   let prime_value = matches.value_of("solver").unwrap();
+                   if prime_value == "ffsol"
+                      || prime_value == "cvc5"
+                      || prime_value == "civer"
+                      || prime_value == "all"
+                      || prime_value == "z3"
+                      {
+                        Ok(String::from(matches.value_of("solver").unwrap()))
+                    }
+                    else{
+                        Result::Err(eprintln!("{}", Colour::Red.paint("invalid solver")))
+                    }
+               }
+               
+            false => Ok(String::from("civer")),
         }
     }
 
@@ -488,6 +556,34 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(30)
                     .help("Outputs the constraints in r1cs format"),
+            )
+            .arg(
+                Arg::with_name("check_safety")
+                    .long("check_safety")
+                    .takes_value(false)
+                    .display_order(80)
+                    .help("Tries to verify the determinism of the circuit"),
+            )
+            .arg(
+                Arg::with_name("check_tags")
+                    .long("check_tags")
+                    .takes_value(false)
+                    .display_order(80)
+                    .help("Tries to verify the correctness of the tags of the circuit"),
+            )
+            .arg(
+                Arg::with_name("solver")
+                    .long("solver")
+                    .takes_value(true)
+                    .display_order(80)
+                    .help("To choose the solver applied for the verification"),
+            )
+            .arg(
+                Arg::with_name("verification_timeout")
+                    .long("verification_timeout")
+                    .takes_value(true)
+                    .display_order(80)
+                    .help("To choose the verification timeout"),
             )
             .arg(
                 Arg::with_name("print_wasm")

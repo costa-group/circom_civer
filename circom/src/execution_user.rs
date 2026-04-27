@@ -22,6 +22,11 @@ pub struct ExecutionConfig {
     pub json_substitution_flag: bool,
     pub json_constraint_flag: bool,
     pub prime: String,
+    pub check_tags: bool,
+    pub check_safety: bool,
+    pub civer_file: String, 
+    pub verification_timeout: u64,
+    pub solver: String,
 }
 
 pub fn execute_project(
@@ -41,6 +46,12 @@ pub fn execute_project(
         inspect_constraints: config.inspect_constraints_flag,
         flag_old_heuristics: config.flag_old_heuristics,
         prime : config.prime,
+        solver: config.solver,
+        check_tags: config.check_tags,
+        check_safety: config.check_safety,
+        civer_file: config.civer_file,
+        verification_timeout: config.verification_timeout
+
     };
     let custom_gates = program_archive.custom_gates;
     let (exporter, vcp) = build_circuit(program_archive, build_config)?;
