@@ -5,6 +5,8 @@ use program_structure::ast::{ExpressionInfixOpcode, ExpressionPrefixOpcode};
 
 
 use circom_algebra::algebra::Constraint;
+use circom_algebra::modular_arithmetic::*;
+
 
 /* 
 pub fn correctness_problem_to_smt2(problem: &CorrectnessVerification)->LinkedList<String>{
@@ -501,12 +503,72 @@ pub fn declare_all_signals_equal_2(signals: &Vec<usize>, signal_to_names: &HashM
 
 
 
-
 fn transform_expression_to_smt2(
     expr: &Expression, 
     signals_to_names: &HashMap<usize,String>,
     prime: &BigInt
 ) -> String{
+    fn get_expression_number(
+        expr: &Expression,
+        prime: &BigInt
+    ) -> Option<BigInt>{
+            
+        match expr{
+            Number(_,v) => {
+                Some(v.clone())
+            }
+            Variable {name, ..} => {
+                None
+            }
+            InfixOp { lhe, infix_op, rhe, .. } => {
+                let l_number = get_expression_number(lhe, prime);
+                let r_number = get_expression_number( rhe, prime);
+
+                if l_number.is_none() || !r_number.is_none() {
+                    return None;
+                }
+                let l_number = l_number.unwrap();
+                let r_number = r_number.unwrap();
+                let result = match infix_op{
+                    ExpressionInfixOpcode::Mul => mul(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::Add => add(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::ShiftL => {
+                        todo!()
+                        //shift_l(&l_number, &r_number, prime).unwrap()
+                    },
+                    ExpressionInfixOpcode::Sub => sub(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::LesserEq => lesser_eq(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::GreaterEq => greater_eq(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::Lesser => lesser(&l_number,& r_number, prime),
+                    ExpressionInfixOpcode::Greater => greater_eq(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::Eq => eq(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::NotEq => not_eq(&l_number, &r_number, prime),
+                    ExpressionInfixOpcode::BoolOr => bool_or(&l_number,& r_number, prime),
+                    ExpressionInfixOpcode::BoolAnd => bool_and(&l_number, &r_number, prime),
+                   
+                    _ => unreachable!(),
+                };
+                Some(result)
+        
+            }
+            PrefixOp {  prefix_op, rhe, .. } => {
+                let r_value = get_expression_number(rhe, prime);
+                if r_value.is_none(){
+                    return None
+                }
+                let r_value = r_value.unwrap();
+                let result = match prefix_op{
+                    ExpressionPrefixOpcode::Sub => prefix_sub(&r_value, prime),
+                    ExpressionPrefixOpcode::BoolNot => not(&r_value, prime),
+
+                    _ => unreachable!(),
+                };
+                Some(result)
+        
+            }
+            _ => unreachable!()
+        }
+    }
     use Expression::*;
     use circom_algebra::num_traits::ToPrimitive;
     use circom_algebra::num_traits::pow;
@@ -519,13 +581,21 @@ fn transform_expression_to_smt2(
                 signals_to_names.get(&name.parse::<usize>().unwrap()).unwrap().clone()
             }
             InfixOp { lhe, infix_op, rhe, .. } => {
-                let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
-                let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
 
                 match infix_op{
-                    ExpressionInfixOpcode::Mul => format!("(ff.mul {} {})", l_string, r_string),
-                    ExpressionInfixOpcode::Add => format!("(ff.add {} {})", l_string, r_string),
+                    ExpressionInfixOpcode::Mul => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
+                        format!("(ff.mul {} {})", l_string, r_string)
+                    },
+                    ExpressionInfixOpcode::Add => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
+                        format!("(ff.add {} {})", l_string, r_string)
+                    },
                     ExpressionInfixOpcode::ShiftL => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+
                         if rhe.is_number(){
                             match *rhe.clone(){
                                 Expression::Number(_, value) => {
@@ -543,6 +613,8 @@ fn transform_expression_to_smt2(
                     },
 
                     ExpressionInfixOpcode::Sub => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
                         let minus_one = format!("(as ff{} FF0)", prime - 1);
                         let minus_b = format!("(ff.mul {} {})", minus_one, r_string);
                         format!("(ff.add {} {})", l_string, minus_b)
@@ -550,11 +622,30 @@ fn transform_expression_to_smt2(
                     }
 
                     ExpressionInfixOpcode::LesserEq => {
-                        format!("(ff.range {} 0 {})", l_string, r_string)
+                        let value_left = get_expression_number(lhe, prime);
+                        if value_left.is_some(){
+                            let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
+                            let l_string: String = format!("(as ff{} FF0)", value_left.unwrap());
+                            let minus_one: String = format!("(as ff{} FF0)", prime - 1);
+
+                            return format!("(ff.range {} {} {})", r_string, l_string, minus_one);
+                        }
+                        let value_right = get_expression_number(rhe, prime);
+                        if value_right.is_some(){
+                            println!("{}", value_right.as_ref().unwrap());
+                            let l_string = transform_expression_to_smt2( lhe, signals_to_names, prime);
+                            let r_string: String = format!("(as ff{} FF0)", value_right.unwrap());
+
+                            return format!("(ff.range {} (as ff0 FF0) {})", l_string, r_string);
+                        }
+                        unreachable!("Not valid expression")
+
                     },
                     ExpressionInfixOpcode::GreaterEq => {
-                        let minus_one: String = format!("(as ff{} FF0)", prime - 1);
-                        format!("(ff.range {} {} {})", l_string, r_string, minus_one)
+                        todo!()
+
+                        //let minus_one: String = format!("(as ff{} FF0)", prime - 1);
+                        //format!("(ff.range {} {} {})", l_string, r_string, minus_one)
                     },
                     ExpressionInfixOpcode::Lesser => {
                         todo!()
@@ -563,18 +654,26 @@ fn transform_expression_to_smt2(
                         todo!()
                     },
                     ExpressionInfixOpcode::Eq => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
                         format!("(= {} {})", l_string, r_string)
 
                     },  
                     ExpressionInfixOpcode::NotEq => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
                         format!("(not (= {} {}))", l_string, r_string)
 
                     },  
                     ExpressionInfixOpcode::BoolOr => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
                         format!("(or {} {})", l_string, r_string)
 
                     },  
                     ExpressionInfixOpcode::BoolAnd => {
+                        let l_string = transform_expression_to_smt2(lhe, signals_to_names, prime);
+                        let r_string = transform_expression_to_smt2( rhe, signals_to_names, prime);
                         format!("(and {} {})", l_string, r_string)
                     },  
                     

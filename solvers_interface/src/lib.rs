@@ -4,13 +4,15 @@ pub mod cvc5_interface;
 pub mod z3_interface;
 pub mod parallel_interface;
 */
+pub mod civer_interface;
 pub mod ffsol_interface;
 mod smt2_utils;
+mod civer;
 
 
 use std::collections::{HashMap, LinkedList};
 use circom_algebra::num_bigint::BigInt;
-use program_structure::ast::Expression;
+use program_structure::ast::{ExpressionInfixOpcode, ExpressionPrefixOpcode, Expression};
 type Constraint = circom_algebra::algebra::Constraint<usize>;
 
 
@@ -91,6 +93,7 @@ impl VerificationProblem{
     pub fn solve_problem(&self)-> CompleteVerificationResult{
         match self.config.solver{
             PossibleSolver::FFSOL => ffsol_interface::solve_problem(&self),
+            PossibleSolver::CIVER => civer_interface::solve_problem(&self),
             _ => todo!()
         }
     }
