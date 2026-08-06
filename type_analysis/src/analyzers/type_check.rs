@@ -1480,14 +1480,20 @@ pub fn tag_specification_type_check(specification_name : &str, program_archive: 
             );
         }
         Some(signal_type) =>{
-            // add the bus indicated 
+            // add the bus indicated
             analysis_information.environment.add_input_bus(
                 specification_data.get_signal(),
                 (Option::Some(signal_type.clone()), 0, vec![specification_data.get_tag().to_string()])
             );
         }
     }
-    
+
+    // the parameters of the bus behave as compile-time scalar variables inside
+    // the condition: they get their value when the bus is instantiated
+    for arg in specification_data.get_args() {
+        analysis_information.environment.add_variable(arg, 0);
+    }
+
     let exp =  specification_data.get_condition();
     let type_analysis_response = type_expression(&exp, program_archive, &mut analysis_information);
     let cond_type = if let Result::Ok(t) = type_analysis_response {

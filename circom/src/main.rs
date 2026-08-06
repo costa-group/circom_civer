@@ -46,6 +46,7 @@ fn start() -> Result<(), ()> {
         prime: user_input.prime(),       
         check_tags: user_input.check_tags(),
         check_safety: user_input.check_safety(),
+        add_tags_info: user_input.add_tags_info(),
         civer_file: user_input.civer_file().to_string(),
         verification_timeout: user_input.verification_timeout(),
         solver: user_input.solver().to_string()

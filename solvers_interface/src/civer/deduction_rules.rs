@@ -332,7 +332,7 @@ fn check_consecutive_field_round(min: &BigInt, max: &BigInt, field: &BigInt)-> b
 }
 
 fn check_correct_signs(a: &BigInt, b: &BigInt)-> bool{
-    // revisar esta también
+    // TODO: review this one as well
     let zero = &BigInt::from(0);
     !(a >= zero && b < zero) && !(b >= zero && a < zero) 
 }

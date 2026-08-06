@@ -1248,7 +1248,8 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
     }    
     
     pub fn constraint_to_smt2(&self, signal_to_smt2_name: &HashMap<C,String>) -> String{
-        
+        // The constraint is A*B - C = 0, so C is subtracted. When A*B is 0
+        // (a linear constraint) the sign is irrelevant and C is left as it is.
         let right_side = if self.a.is_empty() || self.b.is_empty(){
             ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
         } else{
@@ -1259,7 +1260,7 @@ impl<C: Default + Clone + Display + Hash + Eq> Constraint<C> {
             if self.c.is_empty(){
                 mul
             } else{
-                format!("(ff.add {} {})",
+                format!("(ff.sub {} {})",
                     mul,
                     ArithmeticExpression::coefficients_to_smt2(self.c(),signal_to_smt2_name)
                 )

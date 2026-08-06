@@ -1,6 +1,6 @@
 use super::analysis::Analysis;
 use crate::FlagsExecution;
-use super::executed_template::{ExecutedTemplate, PreExecutedTemplate};
+use super::executed_template::{ExecutedTemplate, PreExecutedTemplate, SpecificationContext};
 use super::executed_bus::ExecutedBus;
 
 use super::type_definitions::*;
@@ -175,8 +175,14 @@ impl ExecutedProgram {
             mixed_instances = merge_mixed(mixed_instances, mixed);
         }
 
+        let spec_context = SpecificationContext {
+            tag_specifications: &program.tag_specifications,
+            program_archive: &program,
+            prime: &self.prime,
+            flags,
+        };
         for exe in &mut self.model {
-            exe.insert_in_dag(&mut dag, &self.model_buses, &program.tag_specifications);
+            exe.insert_in_dag(&mut dag, &self.model_buses, &spec_context);
         }
 
         let mut wrapped_buses_table = vec![None; self.model_buses.len()];

@@ -167,6 +167,11 @@ pub enum Definition {
         meta: Meta,
         tag: String,
         signal_type: Option<String>,
+        // parameters of the bus the specification is written for; they can be
+        // used inside the condition and are bound, positionally, to the
+        // arguments of each concrete instance of the bus
+        args: Vec<String>,
+        arg_location: FileLocation,
         signal: String,
         condition: Expression
     }
@@ -208,10 +213,12 @@ pub fn build_tag_specification(
     meta: Meta,
     tag: String,
     signal_type: Option<String>,
+    args: Vec<String>,
+    arg_location: FileLocation,
     signal: String,
     condition: Expression
 ) -> Definition {
-    Definition::TagSpecification { meta, tag, signal_type, signal, condition }
+    Definition::TagSpecification { meta, tag, signal_type, args, arg_location, signal, condition }
 }
 
 #[derive(Clone)]

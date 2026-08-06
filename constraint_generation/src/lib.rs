@@ -39,6 +39,7 @@ pub struct BuildConfig {
     pub prime: String,
     pub check_tags: bool,
     pub check_safety: bool,
+    pub add_tags_info: bool,
     pub civer_file: String,
     pub solver: String,
     pub verification_timeout: u64
@@ -82,6 +83,7 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
         let verification_config = VerificationConfig{
             check_tags: config.check_tags,
             check_safety: config.check_safety,
+            add_tags_info: config.add_tags_info,
             verbose: config.flag_verbose,
             verification_timeout: config.verification_timeout,
             solver,

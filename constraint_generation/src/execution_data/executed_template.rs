@@ -10,6 +10,8 @@ use std::collections::{HashMap, HashSet};
 use crate::execution_data::AExpressionSlice;
 use std::collections::LinkedList;
 use program_structure::program_library::tag_specification_data::TagSpecificationInfo;
+use program_structure::program_archive::ProgramArchive;
+use crate::FlagsExecution;
 
 
 struct Connexion {
@@ -269,7 +271,7 @@ impl ExecutedTemplate {
         &self.intermediates
     }
 
-    pub fn insert_in_dag(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, tag_specifications: &TagSpecificationInfo) {
+    pub fn insert_in_dag(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, spec_context: &SpecificationContext) {
         let parameters = {
             let mut parameters = vec![];
             for (_, data) in self.parameter_instances.clone() {
@@ -288,7 +290,7 @@ impl ExecutedTemplate {
             self.is_parallel,
             self.is_custom_gate
         );
-        self.build_wires(dag, buses_info, tag_specifications);
+        self.build_wires(dag, buses_info, spec_context);
         self.build_ordered_signals(dag, buses_info);
         self.build_connexions(dag);
         self.build_constraints(dag);
@@ -296,7 +298,7 @@ impl ExecutedTemplate {
 
     }
 
-    fn build_wires(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, tag_specifications: &TagSpecificationInfo) {
+    fn build_wires(&mut self, dag: &mut DAG, buses_info : &Vec<ExecutedBus>, spec_context: &SpecificationContext) {
         
         let mut specification_preconditions = LinkedList::new();
         let mut specification_intermediates = LinkedList::new();
@@ -320,7 +322,7 @@ impl ExecutedTemplate {
                     buses_info,
                     &self.signal_to_tags,
                     &self.signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                  )
             } else{
                 generate_symbols(
@@ -329,7 +331,7 @@ impl ExecutedTemplate {
                     &config,
                     &self.signal_to_tags,
                     &self.signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                 )
             };
             specification_postconditions.append(&mut instantiated_spec);
@@ -353,7 +355,7 @@ impl ExecutedTemplate {
                         buses_info,
                         &self.signal_to_tags,
                         &self.signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 } else{
                     generate_symbols(
@@ -362,7 +364,7 @@ impl ExecutedTemplate {
                         &config,
                         &self.signal_to_tags,
                         &self.signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 };
                 specification_preconditions.append(&mut instantiated_spec);
@@ -386,7 +388,7 @@ impl ExecutedTemplate {
                         buses_info,
                         &self.signal_to_tags,
                         &self.signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 } else{
                     generate_symbols(
@@ -395,7 +397,7 @@ impl ExecutedTemplate {
                         &config,
                         &self.signal_to_tags,
                         &self.signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 };
                 specification_preconditions.append(&mut instantiated_spec);
@@ -418,7 +420,7 @@ impl ExecutedTemplate {
                     buses_info,
                     &self.signal_to_tags,
                     &self.signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                  )
             } else{
                 generate_symbols(
@@ -427,7 +429,7 @@ impl ExecutedTemplate {
                     &config,
                     &self.signal_to_tags,
                     &self.signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                 )
             };
             specification_intermediates.append(&mut instantiated_spec);
@@ -732,7 +734,7 @@ fn generate_symbols(
     config: &SignalConfig, 
     signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
     signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
-    tag_specifications: &TagSpecificationInfo
+    spec_context: &SpecificationContext,
 ) -> LinkedList<Expression>{
     if state.dim == config.dimensions.len() {
 
@@ -742,18 +744,23 @@ fn generate_symbols(
         match tags{
             Some(list_tags)=>{
                 for tag in list_tags{
-                    let tag_specification = tag_specifications.get(tag);
+                    let tag_specification = spec_context.tag_specifications.get(tag);
                     match tag_specification{
                         Some(spec)=>{
                             let condition = spec.get_condition();
-                            instantiated_specifications.push_back(
-                                instantiate_expression(
-                                    condition,
-                                    &state.name,
-                                    &state.signal_field_names,
-                                    signal_to_tags_with_value
-                                )
+                            // the specification of a plain signal cannot take
+                            // parameters, so there is nothing to bind here
+                            let instantiated = instantiate_expression(
+                                condition,
+                                &state.name,
+                                &state.signal_field_names,
+                                signal_to_tags_with_value,
+                                &SpecificationArgs::new(),
+                                spec_context,
                             );
+                            if !is_trivially_true(&instantiated){
+                                instantiated_specifications.push_back(instantiated);
+                            }
                         },
                         None =>{
                             // no need to add
@@ -795,7 +802,7 @@ fn generate_symbols(
                     config,
                     signal_to_tags,
                     signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                 )
             );
             index += 1;
@@ -813,7 +820,7 @@ fn generate_bus_symbols(
     buses: &Vec<ExecutedBus>,
     signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
     signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
-    tag_specifications: &TagSpecificationInfo
+    spec_context: &SpecificationContext,
 ) -> LinkedList<Expression>{
     let bus_connection = bus_connexions.get(&state.basic_name).unwrap();
     let ex_bus2 = buses.get(bus_connection.inspect.goes_to).unwrap();
@@ -846,7 +853,7 @@ fn generate_bus_symbols(
                         buses,
                         signal_to_tags,
                         signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 );
             } else{
@@ -857,7 +864,7 @@ fn generate_bus_symbols(
                         &config,
                         signal_to_tags,
                         signal_to_tags_with_value,
-                        tag_specifications
+                        spec_context,
                     )
                 );
             }
@@ -868,18 +875,26 @@ fn generate_bus_symbols(
         match tags{
             Some(list_tags)=>{
                 for tag in list_tags{
-                    let tag_specification = tag_specifications.get(tag);
+                    let tag_specification = spec_context.tag_specifications.get(tag);
                     match tag_specification{
                         Some(spec)=>{
                             let condition = spec.get_condition();
-                            instantiated_specifications.push_back(
-                                instantiate_expression(
-                                    condition,
-                                    &state.name,
-                                    &state.signal_field_names,
-                                    signal_to_tags_with_value
-                                )
+                            // the parameters declared by the specification stand,
+                            // positionally, for the ones of this instance of the bus
+                            let spec_args = bind_specification_args(spec.get_args(), ex_bus2);
+                            let instantiated = instantiate_expression(
+                                condition,
+                                &state.name,
+                                &state.signal_field_names,
+                                signal_to_tags_with_value,
+                                &spec_args,
+                                spec_context,
                             );
+                            // a specification guarded by the parameters may not
+                            // apply to this instance at all
+                            if !is_trivially_true(&instantiated){
+                                instantiated_specifications.push_back(instantiated);
+                            }
                         },
                         None =>{
                             // no need to add
@@ -912,7 +927,7 @@ fn generate_bus_symbols(
                     buses,
                     signal_to_tags,
                     signal_to_tags_with_value,
-                    tag_specifications
+                    spec_context,
                 )
             );
             index += 1;
@@ -924,21 +939,169 @@ fn generate_bus_symbols(
 
 
 
+/// Everything needed to turn the specification of a tag into the proof
+/// obligations of a concrete instance: the specifications themselves and what is
+/// required to resolve the calls to pure functions that appear in them.
+pub struct SpecificationContext<'a> {
+    pub tag_specifications: &'a TagSpecificationInfo,
+    pub program_archive: &'a ProgramArchive,
+    pub prime: &'a String,
+    pub flags: FlagsExecution,
+}
+
+/// Values bound to the parameters declared by a tag specification, taken from
+/// the instance of the bus the specification is being applied to.
+pub type SpecificationArgs = HashMap<String, BigInt>;
+
+/// True when, once instantiated, the specification says nothing about this
+/// instance: its guard on the parameters of the bus already made it hold. Such
+/// a specification generates no proof obligation.
+fn is_trivially_true(condition: &Expression) -> bool{
+    use num_traits::Zero;
+    match condition{
+        Expression::Number(_, value) => !value.is_zero(),
+        _ => false,
+    }
+}
+
+/// Binds the parameter names declared by a tag specification to the values that
+/// the corresponding parameters take in this instance of the bus. The binding is
+/// positional: the i-th parameter of the specification stands for the i-th
+/// parameter of the bus, whatever the two are called.
+fn bind_specification_args(
+    spec_args: &Vec<String>,
+    executed_bus: &ExecutedBus,
+) -> SpecificationArgs{
+    use crate::environment_utils::slice_types::AExpressionSlice;
+    use circom_algebra::algebra::ArithmeticExpression;
+
+    let mut args = SpecificationArgs::new();
+    // the arity was already checked during the symbol analysis; a specification
+    // that declares no parameters simply binds nothing
+    for (name, bus_param) in spec_args.iter().zip(executed_bus.parameter_names.iter()){
+        let slice = match executed_bus.parameter_instances.get(bus_param){
+            Some(slice) => slice,
+            None => continue,
+        };
+        let value = AExpressionSlice::get_reference_to_single_value_by_index(slice, 0);
+        if let Ok(ArithmeticExpression::Number { value }) = value{
+            args.insert(name.clone(), value.clone());
+        }
+    }
+    args
+}
+
+/// Evaluates an expression of a tag specification that must be a compile-time
+/// constant: the indices of the array accesses, and the guards that decide
+/// which part of a specification applies to a given instance of the bus. The
+/// only free symbols allowed are the parameters of the specification, which
+/// already have a value in `spec_args`; anything mentioning a signal is not
+/// constant and yields None.
+///
+/// Comparisons and boolean operators follow the convention of the language:
+/// false is 0 and true is 1.
+fn evaluate_constant_expression(
+    expression: &Expression,
+    spec_args: &SpecificationArgs,
+    spec_context: &SpecificationContext,
+) -> Option<BigInt>{
+    use program_structure::ast::Expression::{Number, Variable, InfixOp, PrefixOp, Call};
+    use program_structure::ast::{ExpressionInfixOpcode, ExpressionPrefixOpcode};
+    use num_traits::{One, Pow, ToPrimitive, Zero};
+
+    fn boolean(value: bool) -> Option<BigInt>{
+        Some(if value { BigInt::one() } else { BigInt::zero() })
+    }
+
+    match expression{
+        Number(_, value) => Some(value.clone()),
+        Variable { name, access, .. } => {
+            if access.is_empty(){
+                spec_args.get(name).cloned()
+            } else{
+                None
+            }
+        }
+        PrefixOp { prefix_op, rhe, .. } => {
+            let value = evaluate_constant_expression(rhe, spec_args, spec_context)?;
+            match prefix_op{
+                ExpressionPrefixOpcode::Sub => Some(-value),
+                ExpressionPrefixOpcode::BoolNot => boolean(value.is_zero()),
+                _ => None,
+            }
+        }
+        InfixOp { lhe, infix_op, rhe, .. } => {
+            let l = evaluate_constant_expression(lhe, spec_args, spec_context)?;
+            let r = evaluate_constant_expression(rhe, spec_args, spec_context)?;
+            match infix_op{
+                ExpressionInfixOpcode::Add => Some(l + r),
+                ExpressionInfixOpcode::Sub => Some(l - r),
+                ExpressionInfixOpcode::Mul => Some(l * r),
+                ExpressionInfixOpcode::Div | ExpressionInfixOpcode::IntDiv => {
+                    if r.is_zero() { None } else { Some(l / r) }
+                }
+                ExpressionInfixOpcode::Mod => {
+                    if r.is_zero() { None } else { Some(l % r) }
+                }
+                ExpressionInfixOpcode::Pow => {
+                    let exp = r.to_u32()?;
+                    Some(Pow::pow(&l, exp))
+                }
+                ExpressionInfixOpcode::Lesser => boolean(l < r),
+                ExpressionInfixOpcode::LesserEq => boolean(l <= r),
+                ExpressionInfixOpcode::Greater => boolean(l > r),
+                ExpressionInfixOpcode::GreaterEq => boolean(l >= r),
+                ExpressionInfixOpcode::Eq => boolean(l == r),
+                ExpressionInfixOpcode::NotEq => boolean(l != r),
+                ExpressionInfixOpcode::BoolAnd => boolean(!l.is_zero() && !r.is_zero()),
+                ExpressionInfixOpcode::BoolOr => boolean(!l.is_zero() || !r.is_zero()),
+                _ => None,
+            }
+        }
+        Call { id, args, .. } => {
+            // a call to a pure function is resolved here, so that the
+            // specification can be written in terms of the constants of the
+            // library (maxbits(), for instance) instead of repeating them
+            let mut values = Vec::new();
+            for arg in args{
+                values.push(evaluate_constant_expression(arg, spec_args, spec_context)?);
+            }
+            crate::execute::execute_constant_function_call(
+                id,
+                values,
+                spec_context.program_archive,
+                spec_context.prime,
+                spec_context.flags,
+            )
+        }
+        _ => None,
+    }
+}
+
 fn instantiate_expression(
     expression: &Expression,
     signal_name: &String,
     signal_field_names: &Vec<String>,
     signal_to_tags_values: &HashMap<Vec<String>, BigInt>,
+    spec_args: &SpecificationArgs,
+    spec_context: &SpecificationContext,
 ) -> Expression{
 
-    use program_structure::ast::Expression::{Number, Variable, InfixOp, PrefixOp};
+    use program_structure::ast::Expression::{Number, Variable, InfixOp, PrefixOp, Call};
     use program_structure::ast::Access;
 
     match expression{
         Number(_,_) => {
             expression.clone()
         },
-        Variable { meta, access, .. } => {
+        Variable { meta, name, access } => {
+            // a bare reference to one of the parameters of the specification is
+            // replaced by the value it takes in this instance of the bus
+            if access.is_empty(){
+                if let Some(value) = spec_args.get(name){
+                    return Number(meta.clone(), value.clone());
+                }
+            }
             // todo -> apply type analysis and get info about if it is tag
             //if meta.get_type_knowledge().is_tag() {
                 // in case it is a tag get its value
@@ -953,19 +1116,24 @@ fn instantiate_expression(
                             string_name = format!("{}.{}", string_name, value);
                         },
                         Access::ArrayAccess(expr)=>{
-
-                            match expr{
-                                Number(_, value)=>{
+                            // the index may mention the parameters of the
+                            // specification, so it is folded here
+                            match evaluate_constant_expression(expr, spec_args, spec_context){
+                                Some(value)=>{
                                     string_name = format!("{}[{}]", string_name, value);
                                 },
-                                _ => unreachable!()
+                                None => panic!(
+                                    "The index of an array access in the specification of a tag \
+                                     is not a compile-time constant. Only numbers and the \
+                                     parameters declared by the specification can be used there."
+                                ),
                             }
 
                         }
                     }
                 }
 
-                
+
 
                 let value = signal_to_tags_values.get(&complete_signal_name);
 
@@ -987,13 +1155,102 @@ fn instantiate_expression(
             //}
         }
         InfixOp { meta, lhe, infix_op, rhe, .. } => {
-            let l_value = instantiate_expression(lhe, signal_name, signal_field_names, signal_to_tags_values);
-            let r_value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values);
-            Expression::InfixOp { meta: meta.clone(), lhe: Box::new(l_value), infix_op: *infix_op, rhe: Box::new(r_value) }
+            use program_structure::ast::ExpressionInfixOpcode;
+            use program_structure::ast::ExpressionInfixOpcode::{BoolAnd, BoolOr, Mul};
+            use num_traits::{One, Zero};
+
+            // Value of one operand that already decides the result of the
+            // operation on its own, whatever the other one is.
+            let decides = match infix_op{
+                BoolAnd | Mul => Option::Some(BigInt::zero()),
+                BoolOr => Option::Some(BigInt::one()),
+                _ => Option::None,
+            };
+
+            // A specification can be guarded by a condition on the parameters,
+            // so that it only applies to some instances of the bus, and can zero
+            // out the terms of a sum that do not belong to a given instance.
+            // When one side already decides the result, the other one is dropped
+            // WITHOUT instantiating it: it may well mention signals that do not
+            // exist in this instance, which is precisely the point of guarding.
+            //
+            //   false && X -> false    true || X -> true    0 * X -> 0
+            if let Option::Some(decides) = &decides{
+                for (side, other) in [(lhe, rhe), (rhe, lhe)]{
+                    match evaluate_constant_expression(side, spec_args, spec_context){
+                        Some(value) if value == *decides => {
+                            return Number(meta.clone(), decides.clone());
+                        }
+                        Some(_) if *infix_op != Mul => {
+                            // constant but not decisive: the result is whatever
+                            // the other side says
+                            return instantiate_expression(
+                                other, signal_name, signal_field_names,
+                                signal_to_tags_values, spec_args, spec_context,
+                            );
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            let l_value = instantiate_expression(lhe, signal_name, signal_field_names, signal_to_tags_values, spec_args, spec_context);
+            let r_value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values, spec_args, spec_context);
+
+            // The same absorption once both sides are instantiated: a branch of a
+            // guard that collapsed leaves a constant behind, and a truth value is
+            // not something the SMT translator can take as a condition.
+            if let Option::Some(decides) = &decides{
+                for (side, other) in [(&l_value, &r_value), (&r_value, &l_value)]{
+                    if let Number(_, value) = side{
+                        if value == decides{
+                            return Number(meta.clone(), decides.clone());
+                        }
+                        if *infix_op != Mul{
+                            return other.clone();
+                        }
+                    }
+                }
+            }
+
+            let rebuilt = Expression::InfixOp {
+                meta: meta.clone(),
+                lhe: Box::new(l_value),
+                infix_op: *infix_op,
+                rhe: Box::new(r_value),
+            };
+            // Connectives and comparisons between constants are folded here too;
+            // the arithmetic is left to the translator, which does it with the
+            // arithmetic of the field.
+            match infix_op{
+                BoolAnd | BoolOr
+                | ExpressionInfixOpcode::Lesser | ExpressionInfixOpcode::LesserEq
+                | ExpressionInfixOpcode::Greater | ExpressionInfixOpcode::GreaterEq
+                | ExpressionInfixOpcode::Eq | ExpressionInfixOpcode::NotEq => {
+                    match evaluate_constant_expression(&rebuilt, spec_args, spec_context){
+                        Some(value) => Number(meta.clone(), value),
+                        None => rebuilt,
+                    }
+                }
+                _ => rebuilt,
+            }
         }
         PrefixOp {meta,  prefix_op, rhe, .. } => {
-            let value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values);
+            let value = instantiate_expression(rhe, signal_name, signal_field_names, signal_to_tags_values, spec_args, spec_context);
             Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
+        }
+
+        Call { id, .. } => {
+            // calls are resolved at instantiation time, so they must not depend
+            // on any signal
+            match evaluate_constant_expression(expression, spec_args, spec_context){
+                Some(value) => Number(expression.get_meta().clone(), value),
+                None => panic!(
+                    "The call to '{}' in the specification of a tag could not be resolved to a \
+                     number. Only calls to pure functions whose arguments are numbers or \
+                     parameters of the specification are allowed there; a function cannot take \
+                     signals as arguments in a specification.", id),
+            }
         }
 
         _ => {unreachable!("The rest of the expressions are not valid."); }

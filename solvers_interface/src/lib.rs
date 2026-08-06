@@ -40,6 +40,9 @@ pub struct ExecutedImplication{
 pub struct VerificationConfig{
     pub check_tags: bool,
     pub check_safety: bool,
+    /// Assume the specifications of the tags of the outputs and intermediates,
+    /// and of the outputs of the subcomponents, when proving weak safety.
+    pub add_tags_info: bool,
     pub solver: PossibleSolver,
     pub verbose: bool,
     pub verification_timeout: u64

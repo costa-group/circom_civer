@@ -526,9 +526,28 @@ pub fn tag_specification_symbol_analysis(
     let exp =  specification_data.get_condition();
 
 
+    let args = specification_data.get_args();
+    let arg_location = specification_data.get_arg_location();
+
     match signal_type{
         None =>{
             // in case it is a signal there is no need to check
+            if !args.is_empty() {
+                let mut report = Report::error(
+                    format!("Parameters in tag specification"),
+                    ReportCode::NonExistentSymbol,
+                );
+                report.add_primary(
+                    arg_location.clone(),
+                    file_id.clone(),
+                    format!(
+                        "Only the specification of a bus tag can take parameters; \
+                         the specification of tag {} is written for a plain signal",
+                        specification_data.get_tag()
+                    ),
+                );
+                reports.push(report);
+            }
         },
         Some(signal_type) => {
             if !program_archive.get_buses().contains_key(signal_type) {
@@ -540,7 +559,45 @@ pub fn tag_specification_symbol_analysis(
                     format!("Calling unknown symbol"),
                 );
                 reports.push(report);
+            } else {
+                // the parameters of the specification stand for the ones of the
+                // bus, so there must be exactly as many as the bus declares
+                let expected = program_archive
+                    .get_bus_data(signal_type)
+                    .get_name_of_params()
+                    .len();
+                if !args.is_empty() && args.len() != expected {
+                    let mut report = Report::error(
+                        format!("Wrong number of parameters in tag specification"),
+                        ReportCode::BusWrongNumberOfArguments,
+                    );
+                    report.add_primary(
+                        arg_location.clone(),
+                        file_id.clone(),
+                        format!(
+                            "Bus {} takes {} parameters, but the specification of tag {} declares {}",
+                            signal_type, expected, specification_data.get_tag(), args.len()
+                        ),
+                    );
+                    reports.push(report);
+                }
             }
+        }
+    }
+
+    // the parameters are visible inside the condition
+    for arg in args {
+        if !add_symbol_to_block(&mut environment, arg) {
+            let mut report = Report::error(
+                format!("Duplicated symbol in tag specification"),
+                ReportCode::SameSymbolDeclaredTwice,
+            );
+            report.add_primary(
+                arg_location.clone(),
+                file_id.clone(),
+                format!("{} is already in use", arg),
+            );
+            reports.push(report);
         }
     }
 

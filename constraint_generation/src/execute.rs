@@ -3365,6 +3365,46 @@ fn prepare_environment_for_call(
     environment
 }
 
+/// Evaluates a call to a pure function whose arguments are all known numbers.
+/// It is used to fold the calls that appear in the specification of a tag, which
+/// are resolved when the specification is instantiated for a concrete bus, and
+/// therefore have no access to any signal. Returns None when the call cannot be
+/// resolved to a single number (unknown function, wrong arity, execution error,
+/// or a result that is not a scalar).
+pub fn execute_constant_function_call(
+    id: &str,
+    arg_values: Vec<BigInt>,
+    program_archive: &ProgramArchive,
+    prime: &String,
+    flags: FlagsExecution,
+) -> Option<BigInt> {
+    if !program_archive.contains_function(id) {
+        return Option::None;
+    }
+    let function_data = program_archive.get_function_data(id);
+    if function_data.get_name_of_params().len() != arg_values.len() {
+        return Option::None;
+    }
+    let args: Vec<AExpressionSlice> = arg_values
+        .into_iter()
+        .map(|value| AExpressionSlice::new(&AExpr::Number { value }))
+        .collect();
+
+    let mut runtime =
+        RuntimeInformation::new(function_data.get_file_id(), program_archive.id_max, prime);
+    runtime.environment = prepare_environment_for_call(id, &args, program_archive);
+    runtime.call_trace.push(id.to_string());
+    let (folded, _) = execute_function_call(id, program_archive, &mut runtime, flags).ok()?;
+    let slice = folded.arithmetic_slice?;
+    if !slice.is_single() {
+        return Option::None;
+    }
+    match AExpressionSlice::get_reference_to_single_value_by_index(&slice, 0) {
+        Result::Ok(AExpr::Number { value }) => Option::Some(value.clone()),
+        _ => Option::None,
+    }
+}
+
 fn execute_function_call(
     id: &str,
     program_archive: &ProgramArchive,
@@ -3646,6 +3686,7 @@ fn execute_bus_call(
             id.to_string(),
             instantiation_name,
             args_to_values,
+            args_names.clone(),
         );
         execute_sequence_of_bus_statements(
             bus_body,

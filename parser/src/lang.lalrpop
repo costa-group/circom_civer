@@ -145,10 +145,15 @@ pub ParseDefinition : Definition = {
     },
 
     <s:@L> "spec_tag" "{" <tag: IDENTIFIER> "}" <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
-    => build_tag_specification(Meta::new(s,e), tag, None, signal, ins),
+    => build_tag_specification(Meta::new(s,e), tag, None, Vec::new(), s..s, signal, ins),
 
-    <s:@L> "spec_tag" "{" <tag: IDENTIFIER> "}" <signal_type: IDENTIFIER> <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
-    => build_tag_specification(Meta::new(s,e), tag,  Some(signal_type),  signal, ins)
+    <s:@L> "spec_tag" "{" <tag: IDENTIFIER> "}" <signal_type: IDENTIFIER> <args:@L> <arg_names: ParseParenthesisArguments?> <arge:@R> <signal: IDENTIFIER> "{" <ins : ParseExpression> "}" <e:@R>
+    => match arg_names {
+        None
+        => build_tag_specification(Meta::new(s,e), tag, Some(signal_type), Vec::new(), args..arge, signal, ins),
+        Some(a)
+        => build_tag_specification(Meta::new(s,e), tag, Some(signal_type), a, args..arge, signal, ins),
+    }
 
 };
 

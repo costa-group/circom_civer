@@ -134,7 +134,7 @@ impl VerificationTree {
             signals: signals,
             initial_signal: self.initial_signal,
             number_outputs: self.number_outputs,
-            number_inputs: self.number_outputs,
+            number_inputs: self.number_inputs,
             specification_preconditions: self.specification_preconditions.clone(),
             specification_intermediates: self.specification_intermediates.clone(),
             specification_postconditions: self.specification_postconditions.clone(),

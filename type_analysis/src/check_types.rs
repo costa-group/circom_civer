@@ -2,6 +2,7 @@ use super::analyzers::*;
 use super::decorators::*;
 use program_structure::error_definition::ReportCollection;
 use program_structure::program_archive::ProgramArchive;
+use std::collections::HashSet;
 
 pub fn check_types(
     program_archive: &mut ProgramArchive,
@@ -30,7 +31,8 @@ pub fn check_types(
         return Result::Err(errors);
     }
 
-    tag_specification_level_analyses(program_archive, &mut errors);
+    let reached_from_specifications =
+        tag_specification_level_analyses(program_archive, &mut errors);
     if !errors.is_empty() {
         return Result::Err(errors)
     }
@@ -59,18 +61,23 @@ pub fn check_types(
             return Result::Err(errors);
         }
         Ok(info) => {
+            // what a tag specification calls is reachable too, even if the main
+            // component never mentions it
+            let is_reached = |name: &String| {
+                info.reached.contains(name) || reached_from_specifications.contains(name)
+            };
             for name in program_archive.get_function_names().clone() {
-                if !info.reached.contains(&name) {
+                if !is_reached(&name) {
                     program_archive.remove_function(&name)
                 }
             }
             for name in program_archive.get_template_names().clone() {
-                if !info.reached.contains(&name) {
+                if !is_reached(&name) {
                     program_archive.remove_template(&name)
                 }
             }
             for name in program_archive.get_bus_names().clone() {
-                if !info.reached.contains(&name) {
+                if !is_reached(&name) {
                     program_archive.remove_bus(&name)
                 }
             }
@@ -207,9 +214,17 @@ fn semantic_analyses(
 }
 
 
-fn tag_specification_level_analyses(program_archive: &ProgramArchive, reports: &mut ReportCollection) {
+/// Returns the callables reached from the specifications of the tags. They are
+/// not reachable from the main component, but the functions called by a
+/// specification are needed when the specification is instantiated, so they must
+/// survive the removal of the unused ones.
+fn tag_specification_level_analyses(
+    program_archive: &ProgramArchive,
+    reports: &mut ReportCollection,
+) -> HashSet<String> {
     use crate::check_types::symbol_analysis::tag_specification_symbol_analysis;
     use crate::check_types::type_check::tag_specification_type_check;
+    let mut reached = HashSet::new();
     let specification_names = program_archive.get_tag_specification_names();
     for specification_name in specification_names {
         let result_0 = tag_specification_symbol_analysis(specification_name, program_archive);
@@ -218,9 +233,15 @@ fn tag_specification_level_analyses(program_archive: &ProgramArchive, reports: &
         }
         else {
             let result_0 = tag_specification_type_check(specification_name, program_archive);
-            if let Result::Err(mut specification_type) = result_0 {
-                reports.append(&mut specification_type);
+            match result_0 {
+                Result::Err(mut specification_type) => {
+                    reports.append(&mut specification_type);
+                }
+                Result::Ok(info) => {
+                    reached.extend(info.reached);
+                }
             }
         }
     }
+    reached
 }

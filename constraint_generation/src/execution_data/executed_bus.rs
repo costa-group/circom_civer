@@ -18,6 +18,10 @@ pub struct ExecutedBus {
     pub report_name: String,
     pub fields: WireCollector,
     pub parameter_instances: ParameterContext,
+    // names of the parameters in declaration order; parameter_instances is a
+    // BTreeMap and hence loses it, but tag specifications bind their own
+    // parameter names positionally
+    pub parameter_names: Vec<String>,
     pub bus_connexions: HashMap<String, BusConnexion>,
     pub size: usize, 
     pub bus_id: Option<usize>,
@@ -29,11 +33,13 @@ impl ExecutedBus {
         name: String,
         report_name: String,
         instance: ParameterContext,
+        parameter_names: Vec<String>,
     ) -> ExecutedBus {
         ExecutedBus {
             report_name,
             bus_name: name,
             parameter_instances: instance,
+            parameter_names,
             fields: Vec::new(),
             bus_connexions: HashMap::new(),
             size: 0,

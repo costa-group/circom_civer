@@ -41,6 +41,7 @@ pub struct Input {
     pub out_civer_name: PathBuf,
     pub check_tags: bool,
     pub check_safety: bool,
+    pub add_tags_info: bool,
     pub verification_timeout: u64,
 }
 
@@ -124,6 +125,7 @@ impl Input {
             prime: input_processing::get_prime(&matches)?,
             check_tags: input_processing::get_check_tags(&matches),
             check_safety: input_processing::get_check_safety(&matches),
+            add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             solver: input_processing::get_solver(&matches)?,
             verification_timeout: input_processing::get_verification_timeout(&matches),
 
@@ -257,6 +259,10 @@ impl Input {
     }
     pub fn check_safety(&self) -> bool {
         self.check_safety
+    }
+
+    pub fn add_tags_info(&self) -> bool {
+        self.add_tags_info
     }
     pub fn verification_timeout(&self) -> u64 {
         self.verification_timeout
@@ -401,13 +407,17 @@ mod input_processing {
     pub fn get_check_tags(matches: &ArgMatches) -> bool {
         matches.is_present("check_tags")
     }
+    pub fn get_flag_add_tags_info(matches: &ArgMatches) -> bool {
+        matches.is_present("flag_add_tags_info")
+    }
+
     pub fn get_check_safety(matches: &ArgMatches) -> bool {
         matches.is_present("check_safety")
     }
     pub fn get_verification_timeout(matches: &ArgMatches) -> u64 {
-        let has_max_rule_2 = matches.is_present("verification_timeout");
+        let has_max_rule_2 = matches.is_present("timeout");
         if has_max_rule_2{
-            let max_value = matches.value_of("verification").unwrap();
+            let max_value = matches.value_of("timeout").unwrap();
             u64::from_str_radix(max_value, 10).unwrap()
         } else{
             5000
@@ -565,6 +575,13 @@ mod input_processing {
                     .help("Tries to verify the determinism of the circuit"),
             )
             .arg(
+                Arg::with_name("flag_add_tags_info")
+                    .long("add_tags_info")
+                    .takes_value(false)
+                    .display_order(80)
+                    .help("Indicates if CIVER adds the information given by the tags of the outputs when proving safety"),
+            )
+            .arg(
                 Arg::with_name("check_tags")
                     .long("check_tags")
                     .takes_value(false)
@@ -579,8 +596,8 @@ mod input_processing {
                     .help("To choose the solver applied for the verification"),
             )
             .arg(
-                Arg::with_name("verification_timeout")
-                    .long("verification_timeout")
+                Arg::with_name("timeout")
+                    .long("timeout")
                     .takes_value(true)
                     .display_order(80)
                     .help("To choose the verification timeout"),

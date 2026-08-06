@@ -89,7 +89,9 @@ impl Merger {
                         (Option::None, meta)
                     }
                 },
-                Definition::TagSpecification { meta, tag: name, signal_type, signal, condition } => {
+                Definition::TagSpecification {
+                    meta, tag: name, signal_type, args, arg_location, signal, condition
+                } => {
                     if self.contains_function(&name) || self.contains_template(&name) || self.contains_tag_specification(&name)  {
                         (Option::Some(name), meta)
                     } else {
@@ -98,6 +100,8 @@ impl Merger {
                             &mut self.fresh_id,
                             name.clone(),
                             signal_type,
+                            args,
+                            arg_location,
                             signal,
                             condition,
                         );

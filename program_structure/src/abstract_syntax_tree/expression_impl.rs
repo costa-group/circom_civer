@@ -278,8 +278,13 @@ impl Expression {
             Variable { meta, name, access } => {
                 match correspondence.get(name){
                     Some(pos) => Expression:: Variable{meta: meta.clone(), name: format!("{}", pos), access: access.clone()},
-                    None => unreachable!(),
-    
+                    None => panic!(
+                        "The specification refers to the signal '{}', which does not \
+                         exist in the component. This usually means that a spec_tag \
+                         indexes an array or bus field out of its actual bounds (e.g. \
+                         a specification written for a fixed size that is attached to \
+                         a smaller instance).", name),
+
                 }
             }
             InfixOp { meta, lhe, infix_op, rhe, .. } => {

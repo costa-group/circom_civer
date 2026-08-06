@@ -24,6 +24,7 @@ pub struct ExecutionConfig {
     pub prime: String,
     pub check_tags: bool,
     pub check_safety: bool,
+    pub add_tags_info: bool,
     pub civer_file: String, 
     pub verification_timeout: u64,
     pub solver: String,
@@ -49,6 +50,7 @@ pub fn execute_project(
         solver: config.solver,
         check_tags: config.check_tags,
         check_safety: config.check_safety,
+        add_tags_info: config.add_tags_info,
         civer_file: config.civer_file,
         verification_timeout: config.verification_timeout
 

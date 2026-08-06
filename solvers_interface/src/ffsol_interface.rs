@@ -28,6 +28,8 @@ pub struct FfsolConfig {
     pub prime: Option<String>,
     pub apply_la_incremental: bool,
     pub apply_nra: bool,
+    pub apply_nia: bool,
+    pub sequential: bool,
     pub light_check_determinism: bool,
     pub apply_la: bool,
     pub la_with_overflowing_constraints: bool,
@@ -36,6 +38,10 @@ pub struct FfsolConfig {
     pub simple_deductions: bool,
     pub complete_deductions: bool,
     pub complete_non_overflowing_deductions: bool,
+    pub gb_mode: String,
+    pub gb_timeout: u64,
+    pub inconsistent_timeout: u64,
+    pub inconsistent_continue_on_timeout: bool,
     pub verbose: bool,
 }
 
@@ -45,10 +51,12 @@ impl FfsolConfig {
             timeout,
             use_cocoa: true,
             model: None,
-            success: true,
+            success: false,
             prime: None,
-            apply_la_incremental: false,
-            apply_nra: false,
+            apply_la_incremental: true,
+            apply_nra: true,
+            apply_nia: true,
+            sequential: false,
             light_check_determinism: true,
             apply_la: true,
             la_with_overflowing_constraints: false,
@@ -57,6 +65,10 @@ impl FfsolConfig {
             simple_deductions: true,
             complete_deductions: false,
             complete_non_overflowing_deductions: true,
+            gb_mode: "parallel".to_string(),
+            gb_timeout: 0,
+            inconsistent_timeout: 0,
+            inconsistent_continue_on_timeout: false,
             verbose,
         }
     }
@@ -100,6 +112,8 @@ impl FfsolConfig {
 
         push_bool_arg(&mut args, "-apply_la_incremental", self.apply_la_incremental);
         push_bool_arg(&mut args, "-apply_nra", self.apply_nra);
+        push_bool_arg(&mut args, "-apply_nia", self.apply_nia);
+        push_bool_arg(&mut args, "-sequential", self.sequential);
         push_binary_arg(&mut args, "-light_check_determinism", self.light_check_determinism);
         push_binary_arg(&mut args, "-apply_la", self.apply_la);
         push_binary_arg(&mut args, "-la_with_overflowing_constraints", self.la_with_overflowing_constraints);
@@ -108,6 +122,13 @@ impl FfsolConfig {
         push_binary_arg(&mut args, "-simple_deductions", self.simple_deductions);
         push_binary_arg(&mut args, "-complete_deductions", self.complete_deductions);
         push_binary_arg(&mut args, "-complete_non_overflowing_deductions", self.complete_non_overflowing_deductions);
+        args.push("-gb_mode".to_string());
+        args.push(self.gb_mode.clone());
+        args.push("-gb_timeout".to_string());
+        args.push(self.gb_timeout.to_string());
+        args.push("-inconsistent_timeout".to_string());
+        args.push(self.inconsistent_timeout.to_string());
+        push_bool_arg(&mut args, "-inconsistent_continue_on_timeout", self.inconsistent_continue_on_timeout);
 
         args.push("-file".to_string());
         args.push(file_path.to_string());
@@ -220,7 +241,7 @@ fn handling_ffsol_call(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .pre_exec(|| {
-            // Crear un nuevo process group
+            // Create a new process group
             libc::setsid();
             
             Ok(())
@@ -308,6 +329,33 @@ fn handling_ffsol_call(
         }
     } else{
         PossibleResult::UNKNOWN
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FfsolConfig;
+
+    #[test]
+    fn default_config_matches_ffsol_help_defaults() {
+        let config = FfsolConfig::default(0, false);
+
+        assert!(!config.success, "ffsol help defaults -success to false");
+        assert!(config.apply_la_incremental, "ffsol help defaults -apply_la_incremental to true");
+        assert!(config.apply_nra, "ffsol help defaults -apply_nra to true");
+        assert!(config.apply_nia, "ffsol help defaults -apply_nia to true");
+        assert!(!config.sequential, "ffsol help defaults -sequential to false");
+        assert!(config.apply_la, "ffsol help defaults -apply_la to true");
+        assert!(!config.la_with_overflowing_constraints, "ffsol help defaults -la_with_overflowing_constraints to false");
+        assert!(config.linear_solver, "ffsol help defaults -linear_solver to true");
+        assert!(config.grobner_basis, "ffsol help defaults -grobner_basis to true");
+        assert!(config.simple_deductions, "ffsol help defaults -simple_deductions to true");
+        assert!(!config.complete_deductions, "ffsol help defaults -complete_deductions to false");
+        assert!(config.complete_non_overflowing_deductions, "ffsol help defaults -complete_non_overflowing_deductions to true");
+        assert_eq!(config.gb_mode, "cocoa");
+        assert_eq!(config.gb_timeout, 0);
+        assert_eq!(config.inconsistent_timeout, 0);
+        assert!(!config.inconsistent_continue_on_timeout);
     }
 }
 

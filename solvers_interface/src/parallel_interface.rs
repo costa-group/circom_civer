@@ -19,7 +19,7 @@ pub fn study_safety(problem: &SafetyVerification) -> (PossibleResult, Vec<String
     let solvers: &[&str] = &[
         "ffsol",
         "ffsol-nolinear",
-        "cvc5",
+        //"cvc5",
         "z3",
         "civer",
     ];
