@@ -19,6 +19,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 
+/// Name of the SMT2 file of a query: the kind of query (safety or tags)
+/// followed by the name of the template, so that `Num2Bits(254)_obl3` becomes
+/// `tags_Num2Bits_254__obl3_<n>.smt2`. The files are kept under --verbose, and
+/// the name says which query each one is: cutting it at the first parenthesis
+/// would lose the parameters of the template and the obligation.
+fn smt_file_name(kind: &str, filename: &str, random_number: u32) -> String {
+    let safe: String = filename.chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .collect();
+    format!("{}_{}_{}.smt2", kind, safe.trim_matches('_'), random_number)
+}
+
 #[derive(Clone)]
 pub struct FfsolConfig {
     pub timeout: u64,
@@ -154,7 +166,7 @@ pub fn solve_problem(
 
         let smt2_problem: LinkedList<String> = safety_problem_to_smt2(problem);
 
-        let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, &config, None);
+        let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, &config, None, "safety");
 
         match result_solver{
             PossibleResult::VERIFIED=>{
@@ -185,7 +197,7 @@ pub fn solve_problem(
 
         let smt2_problem: LinkedList<String> = tag_verification_problem_to_smt2(problem);
 
-        let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, &config, None);
+        let result_solver = handling_ffsol_call(&smt2_problem, &problem.template_name, &config, None, "tags");
 
         match result_solver{
             PossibleResult::VERIFIED=>{
@@ -234,7 +246,7 @@ fn solve_tags_adaptive(
 
         let all: Vec<&crate::TagObligation> = problem.tag_obligations.iter().collect();
         let smt2_problem: LinkedList<String> = tag_obligations_to_smt2(problem, &all);
-        let result = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
+        let result = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None, "tags");
 
         match result{
             PossibleResult::VERIFIED=>{
@@ -285,7 +297,7 @@ fn solve_tags_one_by_one(
         let smt2_problem: LinkedList<String> = tag_obligation_to_smt2(problem, obligation);
         let name = format!("{}_obl{}", problem.template_name, i);
         let started = Instant::now();
-        let result = handling_ffsol_call(&smt2_problem, &name, config, None);
+        let result = handling_ffsol_call(&smt2_problem, &name, config, None, "tags");
         let elapsed = started.elapsed().as_secs_f64();
 
         let tag = match result{
@@ -326,14 +338,14 @@ fn handling_ffsol_call(
     smt2_problem: &LinkedList<String>,
     filename: &String,
     config: &FfsolConfig,
-    cancel_flag: Option<&AtomicBool>
+    cancel_flag: Option<&AtomicBool>,
+    kind: &str,
 )-> PossibleResult{
 
     //produce a random number for the file name
     let mut rng = rand::thread_rng();
     let random_number: u32 = rng.gen();
-    let short_filename = filename.split("(").next().unwrap();
-    let new_file_name = format!("{}_{}.smt2", short_filename,random_number);
+    let new_file_name = smt_file_name(kind, filename, random_number);
 
     // Ensure the SMT2 text is fully written and flushed to disk before continuing.
     {
