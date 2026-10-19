@@ -89,6 +89,7 @@ pub struct TemplateVerification {
     pub verification_timeout: u64,
     pub check_tags: bool,
     pub check_safety: bool,
+    pub add_tags_info: bool,
 }
 
 impl TemplateVerification{
@@ -126,6 +127,7 @@ impl TemplateVerification{
             verification_timeout: problem.config.verification_timeout, 
             check_tags: problem.config.check_tags, 
             check_safety: problem.config.check_safety,
+            add_tags_info: problem.config.add_tags_info,
         }
     }
 
@@ -368,6 +370,38 @@ impl TemplateVerification{
         }
 
         solver.assert(&value_preconditions);
+
+        // Under --add_tags_info the information of the tags is added to both
+        // copies:
+        //   - the specifications of the outputs and the intermediates of this
+        //     template (self.postconditions, intermediates followed by outputs);
+        //   - for each subcomponent, its tag abstraction: the tags of its inputs
+        //     imply the tags of its outputs.
+        // Both are proof obligations of --check_tags, of this template and of
+        // each child respectively, so assuming them is sound as long as that
+        // check passes; it does make the weak safety result conditional on it.
+        // What they add is range information about each copy, which is what a
+        // determinism argument over a bit decomposition needs and the
+        // constraints alone do not give. The output tags of a child are only
+        // assumed through the implication, that is, when its inputs carry
+        // their tags.
+        if self.add_tags_info{
+            let mut value_tags = z3::ast::Bool::from_bool(&ctx, true);
+            for condition in &self.postconditions{
+                value_tags &= unwrap_translation(
+                    get_z3_expression_bool(&ctx, &condition, &aux_signals_to_smt_rep),
+                    "tag specification assumed for weak safety");
+                value_tags &= unwrap_translation(
+                    get_z3_expression_bool(&ctx, &condition, &aux_signals_to_smt_rep_aux),
+                    "tag specification assumed for weak safety");
+            }
+            solver.assert(&value_tags);
+
+            for implication in &self.implications_correctness{
+                insert_implication_in_smt(implication, &ctx, &solver, &aux_signals_to_smt_rep, &self.field);
+                insert_implication_in_smt(implication, &ctx, &solver, &aux_signals_to_smt_rep_aux, &self.field);
+            }
+        }
 
         let mut i = 0;
         for constraint in &self.constraints{

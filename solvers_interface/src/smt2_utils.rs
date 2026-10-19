@@ -404,23 +404,23 @@ pub fn safety_problem_to_smt2(
         );
     }
 
-    // Under --add_tags_info the specifications of the tags that are NOT
-    // hypotheses of this problem are assumed rather than proved here: the ones of
-    // the outputs and intermediates of the template, and the ones of the outputs
-    // of its subcomponents (the right hand side of the abstraction of each
-    // child). They are proof obligations of --check_tags, of this template in the
-    // first case and of the child in the second, so assuming them here is sound
-    // as long as that check passes; it does make the weak safety result
-    // conditional on it. What they add is range information about each copy,
-    // which is what a determinism argument over a bit decomposition needs and the
-    // constraints alone do not give.
+    // Under --add_tags_info the information of the tags is added to both
+    // copies:
+    //   - the specifications of the outputs and the intermediates of this
+    //     template;
+    //   - for each subcomponent, its tag abstraction: the tags of its inputs
+    //     imply the tags of its outputs.
+    // Both are proof obligations of --check_tags, of this template and of each
+    // child respectively, so assuming them is sound as long as that check
+    // passes; it does make the weak safety result conditional on it. What they
+    // add is range information about each copy, which is what a determinism
+    // argument over a bit decomposition needs and the constraints alone do not
+    // give. The output tags of a child are only assumed through the
+    // implication, that is, when its inputs carry their tags.
     if problem.config.add_tags_info {
         let mut assumed: Vec<&Expression> = Vec::new();
         assumed.extend(problem.specification_intermediates.iter());
         assumed.extend(problem.specification_postconditions.iter());
-        for imp in &problem.tags_implications {
-            assumed.extend(imp.right.iter());
-        }
         for condition in assumed {
             smt2_problem.push_back(
                 format!("(assert {})",
@@ -432,6 +432,13 @@ pub fn safety_problem_to_smt2(
                     transform_expression_to_smt2(condition, &signal_to_name_aux, &problem.field)
                 )
             );
+        }
+        for imp in &problem.tags_implications {
+            for names in [&signal_to_name, &signal_to_name_aux] {
+                smt2_problem.push_back(
+                    format!("(assert {})", implication_to_smt2(imp, names, &problem.field))
+                );
+            }
         }
     }
 
