@@ -92,9 +92,9 @@ pub struct ExecutedTemplate {
     pub bus_connexions: HashMap<String, BusConnexion>,
     pub is_extern_c: bool,
 
-    pub specification_preconditions: LinkedList<Expression>,
-    pub specification_intermediates: LinkedList<Expression>,
-    pub specification_postconditions: LinkedList<Expression>,
+    pub specification_preconditions: LinkedList<(String, Expression)>,
+    pub specification_intermediates: LinkedList<(String, Expression)>,
+    pub specification_postconditions: LinkedList<(String, Expression)>,
 
 }
 
@@ -498,20 +498,20 @@ impl ExecutedTemplate {
     }
 
     fn build_specifications(&self, dag: &mut DAG) {
-        for c in &self.specification_preconditions {
+        for (tag, c) in &self.specification_preconditions {
             let correspondence = dag.get_main().unwrap().correspondence();
             let cc = c.apply_correspondence(correspondence);
-            dag.add_specification_precondition(cc);
+            dag.add_specification_precondition((tag.clone(), cc));
         }
-        for c in &self.specification_postconditions {
+        for (tag, c) in &self.specification_postconditions {
             let correspondence = dag.get_main().unwrap().correspondence();
             let cc = c.apply_correspondence(correspondence);
-            dag.add_specification_postcondition(cc);
+            dag.add_specification_postcondition((tag.clone(), cc));
         }
-        for c in &self.specification_intermediates {
+        for (tag, c) in &self.specification_intermediates {
             let correspondence = dag.get_main().unwrap().correspondence();
             let cc = c.apply_correspondence(correspondence);
-            dag.add_specification_intermediate(cc);
+            dag.add_specification_intermediate((tag.clone(), cc));
         }
         
     }
@@ -735,7 +735,7 @@ fn generate_symbols(
     signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
     signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
     spec_context: &SpecificationContext,
-) -> LinkedList<Expression>{
+) -> LinkedList<(String, Expression)>{
     if state.dim == config.dimensions.len() {
 
         // add the specification of the signal to the dag
@@ -759,7 +759,10 @@ fn generate_symbols(
                                 spec_context,
                             );
                             if !is_trivially_true(&instantiated){
-                                instantiated_specifications.push_back(instantiated);
+                                // the name of the tag travels with its condition:
+                                // it is the only place where it is known, and it
+                                // is what lets a result be attributed to a tag
+                                instantiated_specifications.push_back((tag.clone(), instantiated));
                             }
                         },
                         None =>{
@@ -821,7 +824,7 @@ fn generate_bus_symbols(
     signal_to_tags: &HashMap<Vec<String>, Vec<String>>, 
     signal_to_tags_with_value: &HashMap<Vec<String>, BigInt>,
     spec_context: &SpecificationContext,
-) -> LinkedList<Expression>{
+) -> LinkedList<(String, Expression)>{
     let bus_connection = bus_connexions.get(&state.basic_name).unwrap();
     let ex_bus2 = buses.get(bus_connection.inspect.goes_to).unwrap();
 
@@ -893,7 +896,10 @@ fn generate_bus_symbols(
                             // a specification guarded by the parameters may not
                             // apply to this instance at all
                             if !is_trivially_true(&instantiated){
-                                instantiated_specifications.push_back(instantiated);
+                                // the name of the tag travels with its condition:
+                                // it is the only place where it is known, and it
+                                // is what lets a result be attributed to a tag
+                                instantiated_specifications.push_back((tag.clone(), instantiated));
                             }
                         },
                         None =>{

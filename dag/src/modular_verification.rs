@@ -28,9 +28,12 @@ pub struct VerificationTree {
     pub node_id: usize,
     pub template_name: String,
     pub pretty_template_name: String,
-    pub specification_preconditions: Vec<Expression>,
-    pub specification_intermediates: Vec<Expression>,
-    pub specification_postconditions: Vec<Expression>,
+    /// Each specification travels with the name of the tag it comes from, so a
+    /// result can be attributed to a tag. It is dropped when the problem for the
+    /// solver is built: the translators only need the condition.
+    pub specification_preconditions: Vec<(String, Expression)>,
+    pub specification_intermediates: Vec<(String, Expression)>,
+    pub specification_postconditions: Vec<(String, Expression)>,
     pub number_signals: usize,
     pub number_inputs: usize, 
     pub number_outputs: usize,
@@ -135,9 +138,9 @@ impl VerificationTree {
             initial_signal: self.initial_signal,
             number_outputs: self.number_outputs,
             number_inputs: self.number_inputs,
-            specification_preconditions: self.specification_preconditions.clone(),
-            specification_intermediates: self.specification_intermediates.clone(),
-            specification_postconditions: self.specification_postconditions.clone(),
+            specification_preconditions: conditions(&self.specification_preconditions),
+            specification_intermediates: conditions(&self.specification_intermediates),
+            specification_postconditions: conditions(&self.specification_postconditions),
             constraints: self.constraints.clone(),  
             tags_implications: tags_implications,
             implications_safety: implications_safety,
@@ -265,11 +268,11 @@ impl VerificationTree {
         let mut left_conditions = Vec::new();
         let mut right_conditions = Vec::new();
         if !self.specification_postconditions.is_empty() {
-            for prec in &self.specification_preconditions{
+            for (_tag, prec) in &self.specification_preconditions{
                 left_conditions.push(prec.clone());
             }
 
-            for post in &self.specification_postconditions{
+            for (_tag, post) in &self.specification_postconditions{
                 right_conditions.push(post.clone());
             }
             Some(ExecutedImplication{left: left_conditions, right: right_conditions})
@@ -298,6 +301,11 @@ impl VerificationTree {
     
 
 }
+
+    /// Drops the name of the tag: from here on only the condition is needed.
+    fn conditions(specs: &Vec<(String, Expression)>) -> Vec<Expression>{
+        specs.iter().map(|(_tag, c)| c.clone()).collect()
+    }
 
     fn pretty_print_result(logs: &mut Vec<String>, duration: Duration, n_rounds: usize, result_safety: &PossibleResult, result_tags: &PossibleResult){
         logs.push(format!("Verification time per template: {}\n", duration.as_secs_f64()));    

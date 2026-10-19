@@ -33,9 +33,9 @@ pub struct Tree<'a> {
     pub id_to_name: HashMap<usize, String>,
     pub constraints: Vec<Constraint>,
 
-    specification_preconditions: Vec<Expression>,
-    specification_intermediates: Vec<Expression>,
-    specification_postconditions: Vec<Expression>,
+    specification_preconditions: Vec<(String, Expression)>,
+    specification_intermediates: Vec<(String, Expression)>,
+    specification_postconditions: Vec<(String, Expression)>,
 }
 
 impl<'a> Tree<'a> {
@@ -104,17 +104,17 @@ impl<'a> Tree<'a> {
         let specification_preconditions: Vec<_> = node
             .specification_preconditions
             .iter()
-            .map(|c| c.apply_offset(offset))
+            .map(|(tag, c)| (tag.clone(), c.apply_offset(offset)))
             .collect(); 
         let specification_intermediates: Vec<_> = node
             .specification_intermediates
             .iter()
-            .map(|c| c.apply_offset(offset))
+            .map(|(tag, c)| (tag.clone(), c.apply_offset(offset)))
             .collect(); 
         let specification_postconditions: Vec<_> = node
             .specification_postconditions
             .iter()
-            .map(|c| c.apply_offset(offset))
+            .map(|(tag, c)| (tag.clone(), c.apply_offset(offset)))
             .collect(); 
 
         Tree { 
@@ -210,9 +210,9 @@ pub struct Node {
     is_custom_gate: bool,
     number_of_subcomponents_indexes: usize,
 
-    specification_preconditions: Vec<Expression>,
-    specification_intermediates: Vec<Expression>,
-    specification_postconditions: Vec<Expression>,
+    specification_preconditions: Vec<(String, Expression)>,
+    specification_intermediates: Vec<(String, Expression)>,
+    specification_postconditions: Vec<(String, Expression)>,
 
 }
 
@@ -275,15 +275,15 @@ impl Node {
         self.intermediates_length += 1;
     }
 
-    fn add_specification_precondition(&mut self, condition: Expression) {
+    fn add_specification_precondition(&mut self, condition: (String, Expression)) {
         self.specification_preconditions.push(condition);
     }
 
-    fn add_specification_intermediate(&mut self, condition: Expression) {
+    fn add_specification_intermediate(&mut self, condition: (String, Expression)) {
         self.specification_intermediates.push(condition);
     }
 
-    fn add_specification_postcondition(&mut self, condition: Expression) {
+    fn add_specification_postcondition(&mut self, condition: (String, Expression)) {
         self.specification_postconditions.push(condition);
     }
 
@@ -484,19 +484,19 @@ impl DAG {
         }
     }
 
-    pub fn add_specification_precondition(&mut self, cond: Expression) {
+    pub fn add_specification_precondition(&mut self, cond: (String, Expression)) {
         if let Option::Some(node) = self.get_mut_main() {
             node.add_specification_precondition(cond);
         }
     }
 
-    pub fn add_specification_intermediate(&mut self, cond: Expression) {
+    pub fn add_specification_intermediate(&mut self, cond: (String, Expression)) {
         if let Option::Some(node) = self.get_mut_main() {
             node.add_specification_intermediate(cond);
         }
     }
 
-    pub fn add_specification_postcondition(&mut self, cond: Expression) {
+    pub fn add_specification_postcondition(&mut self, cond: (String, Expression)) {
         if let Option::Some(node) = self.get_mut_main() {
             node.add_specification_postcondition(cond);
         }
