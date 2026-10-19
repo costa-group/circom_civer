@@ -1228,8 +1228,15 @@ fn instantiate_expression(
             // Connectives and comparisons between constants are folded here too;
             // the arithmetic is left to the translator, which does it with the
             // arithmetic of the field.
+            //
+            // Pow is the exception: it is folded here even though it is
+            // arithmetic. Not every translator implements it (the one for civer
+            // does not), and in a tag specification the exponent is always a
+            // constant once the tag values are substituted, so folding it costs
+            // nothing and removes the node before any solver sees it.
             match infix_op{
                 BoolAnd | BoolOr
+                | ExpressionInfixOpcode::Pow
                 | ExpressionInfixOpcode::Lesser | ExpressionInfixOpcode::LesserEq
                 | ExpressionInfixOpcode::Greater | ExpressionInfixOpcode::GreaterEq
                 | ExpressionInfixOpcode::Eq | ExpressionInfixOpcode::NotEq => {
@@ -1246,11 +1253,23 @@ fn instantiate_expression(
             Expression::PrefixOp { meta: meta.clone(),  prefix_op: *prefix_op, rhe: Box::new(value) }
         }
 
-        Call { id, .. } => {
+        Call { meta, id, args } => {
             // calls are resolved at instantiation time, so they must not depend
-            // on any signal
-            match evaluate_constant_expression(expression, spec_args, spec_context){
-                Some(value) => Number(expression.get_meta().clone(), value),
+            // on any signal. The arguments are instantiated first: an argument
+            // such as in.maxbit is an access to a tag value, and only
+            // instantiate_expression knows how to replace it by its number.
+            let instantiated_args: Vec<Expression> = args.iter()
+                .map(|arg| instantiate_expression(
+                    arg, signal_name, signal_field_names, signal_to_tags_values,
+                    spec_args, spec_context))
+                .collect();
+            let rebuilt = Expression::Call {
+                meta: meta.clone(),
+                id: id.clone(),
+                args: instantiated_args,
+            };
+            match evaluate_constant_expression(&rebuilt, spec_args, spec_context){
+                Some(value) => Number(meta.clone(), value),
                 None => panic!(
                     "The call to '{}' in the specification of a tag could not be resolved to a \
                      number. Only calls to pure functions whose arguments are numbers or \
