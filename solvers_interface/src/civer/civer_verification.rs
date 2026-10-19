@@ -239,7 +239,7 @@ impl TemplateVerification{
 
         let mut value_preconditions = z3::ast::Bool::from_bool(&ctx, true);
         for precondition in &self.preconditions{
-            value_preconditions &= get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep).unwrap();
+            value_preconditions &= unwrap_translation(get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep), "precondition");
         }
 
         solver.assert(&value_preconditions);
@@ -260,7 +260,7 @@ impl TemplateVerification{
 
         let mut value_postconditions = z3::ast::Bool::from_bool(&ctx, true);
         for postcondition in &self.postconditions{
-            value_postconditions &= get_z3_expression_bool(&ctx, &postcondition, &aux_signals_to_smt_rep).unwrap();
+            value_postconditions &= unwrap_translation(get_z3_expression_bool(&ctx, &postcondition, &aux_signals_to_smt_rep), "postcondition");
         }
 
 
@@ -362,8 +362,8 @@ impl TemplateVerification{
 
         let mut value_preconditions = z3::ast::Bool::from_bool(&ctx, true);
         for precondition in &self.preconditions{
-            value_preconditions &= get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep).unwrap();
-            value_preconditions &= get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep_aux).unwrap();
+            value_preconditions &= unwrap_translation(get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep), "precondition");
+            value_preconditions &= unwrap_translation(get_z3_expression_bool(&ctx, &precondition, &aux_signals_to_smt_rep_aux), "precondition");
 
         }
 
@@ -788,11 +788,11 @@ pub fn insert_implication_in_smt(
     let mut value_right = z3::ast::Bool::from_bool(ctx, true);
 
     for condition_left in &implication.left{
-        value_left &= get_z3_expression_bool(ctx, condition_left, signals_to_smt_symbols).unwrap();
+        value_left &= unwrap_translation(get_z3_expression_bool(ctx, condition_left, signals_to_smt_symbols), "hypothesis of a subcomponent");
     }
 
     for condition_right in &implication.right{
-        value_right &= get_z3_expression_bool(ctx, condition_right, signals_to_smt_symbols).unwrap();
+        value_right &= unwrap_translation(get_z3_expression_bool(ctx, condition_right, signals_to_smt_symbols), "conclusion of a subcomponent");
 
     }
 
@@ -836,7 +836,49 @@ pub fn get_z3_condition_bounds<'a>(ctx: &'a Context,signal: &'a z3::ast::Int<'a>
 }
 
 
-fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt_symbols: &HashMap<usize, z3::ast::Int<'a>>) -> Result<z3::ast::Int<'a>, ()>{
+/// Describes an expression that the translator cannot handle, so that the error
+/// says which operator has to be implemented instead of just aborting.
+/// Stops the compilation when a specification cannot be translated, saying what
+/// is missing. Deliberately fatal: an operator that nobody implemented is a hole
+/// in the tool, not a property that happens to be hard, and reporting it as
+/// "unknown" would hide it among the timeouts.
+fn unwrap_translation<T>(result: Result<T, String>, what: &str) -> T{
+    match result{
+        Ok(value) => value,
+        Err(reason) => panic!(
+            "CIVER cannot translate the {} of a tag specification into SMT: {}",
+            what, reason),
+    }
+}
+
+fn untranslatable(what: &str, expr: &Expression) -> String{
+    let meta = expr.get_meta();
+    format!("{} is not implemented in the CIVER expression translator \
+             (get_z3_expression_int / get_z3_expression_bool in \
+             solvers_interface/src/civer/civer_verification.rs). It appears at \
+             offset {}..{} of file {}. Implement that case there, or write the \
+             specification without it.",
+            what, meta.start, meta.end, meta.get_file_id())
+}
+
+fn describe_infix(op: &ExpressionInfixOpcode) -> String{
+    use ExpressionInfixOpcode::*;
+    let name = match op{
+        Mul => "the operator * ", Div => "the operator / ", Add => "the operator + ",
+        Sub => "the operator - ", Pow => "the operator ** (Pow)",
+        IntDiv => "the operator \\ ", Mod => "the operator % ",
+        ShiftL => "the operator << ", ShiftR => "the operator >> ",
+        LesserEq => "the operator <= ", GreaterEq => "the operator >= ",
+        Lesser => "the operator < ", Greater => "the operator > ",
+        Eq => "the operator == ", NotEq => "the operator != ",
+        BoolOr => "the operator || ", BoolAnd => "the operator && ",
+        BitOr => "the operator | ", BitAnd => "the operator & ",
+        BitXor => "the operator ^ ",
+    };
+    name.trim().to_string()
+}
+
+fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt_symbols: &HashMap<usize, z3::ast::Int<'a>>) -> Result<z3::ast::Int<'a>, String>{
     use Expression::*;
     use ExpressionInfixOpcode::*;
     use circom_algebra::num_traits::ToPrimitive;
@@ -865,11 +907,11 @@ fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt
                                     Ok(l_string * z3::ast::Int::from_str(&ctx, &pow_value.to_string()).unwrap())
                                 }
                                 _ => {
-                                    Err(())
+                                    Err(untranslatable("a shift by a non constant amount", expr))
                                 }
                             }
                         } else{
-                            Err(())
+                            Err(untranslatable("a shift by a non constant amount", expr))
                         }
                         
                     },
@@ -881,11 +923,11 @@ fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt
                                     Ok(l_string / z3::ast::Int::from_str(&ctx, &pow_value.to_string()).unwrap())
                                 }
                                 _ => {
-                                    Err(())
+                                    Err(untranslatable("a shift by a non constant amount", expr))
                                 }
                             }
                         } else{
-                            Err(())
+                            Err(untranslatable("a shift by a non constant amount", expr))
                         }
                         
                     }
@@ -899,7 +941,7 @@ fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt
                         Ok(is_eq.ite(&z3::ast::Int::from_i64(&ctx, 1), &z3::ast::Int::from_i64(&ctx, 0)))
                     }
                    
-                    _ => Err(()),
+                    _ => Err(untranslatable(&describe_infix(infix_op), expr)),
                 }
         
             }
@@ -907,16 +949,16 @@ fn get_z3_expression_int<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt
                 let r_string = get_z3_expression_int(ctx, rhe, signals_to_smt_symbols)?;
                 match prefix_op{
                     ExpressionPrefixOpcode::Sub => Ok(- r_string),
-                    _ => Err(()),
+                    _ => Err(untranslatable("this prefix operator", expr)),
                 }
         
             }
             
-            _ => { Err(()) }
+            _ => { Err(untranslatable("this kind of expression", expr)) }
         }
 }
 
-fn get_z3_expression_bool<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt_symbols: &HashMap<usize, z3::ast::Int<'a>>) ->    Result<z3::ast::Bool<'a>, ()>{
+fn get_z3_expression_bool<'a>(ctx: &'a Context, expr: &Expression, signals_to_smt_symbols: &HashMap<usize, z3::ast::Int<'a>>) ->    Result<z3::ast::Bool<'a>, String>{
     use Expression::*;
     use ExpressionInfixOpcode::*;
     use ExpressionPrefixOpcode::*;
@@ -1013,7 +1055,7 @@ fn get_z3_expression_bool<'a>(ctx: &'a Context, expr: &Expression, signals_to_sm
                     //     let r_string = get_z3_expression_bool(ctx, rhe, signals_to_smt_symbols)?;
                     //     Ok(l_string.implies(&r_string))
                     // }, 
-                    _ => Err(()),
+                    _ => Err(untranslatable(&describe_infix(infix_op), expr)),
                 }
         
             }
@@ -1021,12 +1063,12 @@ fn get_z3_expression_bool<'a>(ctx: &'a Context, expr: &Expression, signals_to_sm
                 let r_string = get_z3_expression_bool(ctx, rhe, signals_to_smt_symbols)?;
                 match prefix_op{
                     BoolNot => Ok(! r_string),
-                    _ => Err(()),
+                    _ => Err(untranslatable("this prefix operator", expr)),
                 }
         
             }
             
-            _ => {Err(()) }
+            _ => { Err(untranslatable("this kind of expression", expr)) }
         }
 }
 
