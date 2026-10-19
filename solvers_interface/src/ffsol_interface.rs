@@ -1,5 +1,5 @@
-use crate::smt2_utils::tag_verification_problem_to_smt2;
-use crate::{CompleteVerificationResult, PossibleResult, VerificationProblem};
+use crate::smt2_utils::{tag_obligation_to_smt2, tag_obligations_to_smt2, tag_verification_problem_to_smt2};
+use crate::{report_obligation, CompleteVerificationResult, PossibleResult, VerificationProblem};
 use std::process::Command;
 use std::process::Stdio;
 use std::time::Duration;
@@ -176,7 +176,11 @@ pub fn solve_problem(
         None
     };
 
-    let tags_result = if problem.config.check_tags{
+    let mut tag_obligation_results: Vec<(String, PossibleResult)> = Vec::new();
+
+    let tags_result = if problem.config.check_tags && problem.config.split_tags{
+        Some(solve_tags_adaptive(problem, &config, &mut tag_obligation_results, &mut logs))
+    } else if problem.config.check_tags{
         logs.push(format!("### STUDYING TAG CORRECTNESS \n"));
 
         let smt2_problem: LinkedList<String> = tag_verification_problem_to_smt2(problem);
@@ -203,10 +207,119 @@ pub fn solve_problem(
         None
     };
 
-    CompleteVerificationResult { safety_result, tags_result, logs }
+    CompleteVerificationResult { safety_result, tags_result, tag_obligation_results, logs }
 
 }
 
+
+/// Adaptive strategy: one query with all the obligations first, which is cheap
+/// when it closes, and only if it comes back unknown retry them one at a time.
+/// Both branches prove the same set, so what is verified never depends on which
+/// one closes it.
+fn solve_tags_adaptive(
+    problem: &VerificationProblem,
+    config: &FfsolConfig,
+    results: &mut Vec<(String, PossibleResult)>,
+    logs: &mut Vec<String>,
+) -> PossibleResult {
+
+    if problem.tag_obligations.is_empty(){
+        logs.push(format!("### NOTHING TO VERIFY: NO TAG OBLIGATIONS\n"));
+        return PossibleResult::NOTHING;
+    }
+
+    if !problem.config.always_split_tags{
+        logs.push(format!("### STUDYING TAG CORRECTNESS, ALL {} OBLIGATIONS TOGETHER \n",
+            problem.tag_obligations.len()));
+
+        let all: Vec<&crate::TagObligation> = problem.tag_obligations.iter().collect();
+        let smt2_problem: LinkedList<String> = tag_obligations_to_smt2(problem, &all);
+        let result = handling_ffsol_call(&smt2_problem, &problem.template_name, config, None);
+
+        match result{
+            PossibleResult::VERIFIED=>{
+                logs.push(format!("### TAG CORRECTNESS ENSURED BY THE TEMPLATE\n"));
+                for o in &problem.tag_obligations{
+                    results.push((o.label.clone(), PossibleResult::VERIFIED));
+                }
+                return PossibleResult::VERIFIED;
+            },
+            PossibleResult::FAILED=>{
+                // sat on the combined query only says that some obligation
+                // fails, not which one: split to find out
+                logs.push(format!("### SOME OBLIGATION FAILS, SPLITTING TO FIND WHICH ONE\n"));
+            },
+            _=>{
+                logs.push(format!("### COMBINED ATTEMPT TIMED OUT, SPLITTING\n"));
+            }
+        }
+    }
+
+    solve_tags_one_by_one(problem, config, results, logs)
+}
+
+
+/// Proves the obligations one by one: one query per obligation, each with the
+/// full per component timeout. Aggregation: any refuted obligation refutes the
+/// template; otherwise any obligation left unknown leaves it unknown.
+///
+/// A counterexample does not stop the round: the remaining obligations are
+/// still tried. The counterexample may come from the abstraction of the
+/// children, and every obligation proven now is one the next round, with their
+/// constraints, no longer has to retry.
+fn solve_tags_one_by_one(
+    problem: &VerificationProblem,
+    config: &FfsolConfig,
+    results: &mut Vec<(String, PossibleResult)>,
+    logs: &mut Vec<String>,
+) -> PossibleResult {
+
+    logs.push(format!("### STUDYING TAG CORRECTNESS, ONE OBLIGATION AT A TIME \n"));
+
+    let total = problem.tag_obligations.len();
+    let mut n_verified = 0;
+    let mut n_unknown = 0;
+    let mut failed: Vec<&String> = Vec::new();
+
+    for (i, obligation) in problem.tag_obligations.iter().enumerate(){
+        let smt2_problem: LinkedList<String> = tag_obligation_to_smt2(problem, obligation);
+        let name = format!("{}_obl{}", problem.template_name, i);
+        let started = Instant::now();
+        let result = handling_ffsol_call(&smt2_problem, &name, config, None);
+        let elapsed = started.elapsed().as_secs_f64();
+
+        let tag = match result{
+            PossibleResult::VERIFIED => { n_verified += 1; "verified" },
+            PossibleResult::FAILED => { failed.push(&obligation.label); "COUNTEREXAMPLE" },
+            PossibleResult::UNKNOWN => { n_unknown += 1; "timeout" },
+            _ => "unknown result",
+        };
+        logs.push(format!("###   [{}/{}] {}: {}\n", i + 1, total, obligation.label, tag));
+        // report as we go: the logs are only flushed to the .civer file at the
+        // end, and with hundreds of obligations that is too late to be useful
+        report_obligation(&problem.template_name, i + 1, total, &obligation.label,
+                          tag, elapsed);
+        results.push((obligation.label.clone(), result.clone()));
+    }
+
+    logs.push(format!("### OBLIGATIONS: {} verified, {} counterexample, {} timeout, of {}\n",
+        n_verified, failed.len(), n_unknown, total));
+
+    if !failed.is_empty(){
+        logs.push(format!(
+            "### THE TEMPLATE DOES NOT ENSURE TAG CORRECTNESS. FOUND COUNTEREXAMPLE USING SMT FOR:\n"));
+        for label in failed{
+            logs.push(format!("###   {}\n", label));
+        }
+        PossibleResult::FAILED
+    } else if n_unknown > 0{
+        logs.push("### UNKNOWN: VERIFICATION OF TAG CORRECTNESS USING THE SPECIFICATION TIMEOUT\n".to_string());
+        PossibleResult::UNKNOWN
+    } else{
+        logs.push(format!("### TAG CORRECTNESS ENSURED BY THE TEMPLATE\n"));
+        PossibleResult::VERIFIED
+    }
+}
 
 
 fn handling_ffsol_call(

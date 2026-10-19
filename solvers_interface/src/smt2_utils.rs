@@ -1,6 +1,6 @@
 
 use std::collections::{HashMap, LinkedList};
-use crate::{BigInt, ExecutedImplication, Expression, SafetyImplication, VerificationProblem};
+use crate::{BigInt, ExecutedImplication, Expression, SafetyImplication, TagObligation, VerificationProblem};
 use program_structure::ast::{ExpressionInfixOpcode, ExpressionPrefixOpcode};
 
 
@@ -489,9 +489,12 @@ pub fn safety_problem_to_smt2(
 }
 
 
-pub fn tag_verification_problem_to_smt2(
+/// Common context of every tag query: signal declarations, constraints,
+/// abstractions of the children and preconditions. What changes between the
+/// combined query and the per obligation ones is only the negated goal.
+fn tag_context_to_smt2(
     problem: &VerificationProblem
-) -> LinkedList<String> {
+) -> (LinkedList<String>, HashMap<usize, String>) {
 
     let mut smt2_problem = LinkedList::new();
     let mut header: LinkedList<String> = declare_header(&problem.field);
@@ -543,6 +546,18 @@ pub fn tag_verification_problem_to_smt2(
 
     smt2_problem.push_back(format!("(assert {})", preconditions));
 
+    (smt2_problem, signal_to_name)
+}
+
+
+/// All the obligations in a single query: unsat proves every one of them, sat
+/// refutes at least one (without telling which), and a timeout says nothing.
+pub fn tag_verification_problem_to_smt2(
+    problem: &VerificationProblem
+) -> LinkedList<String> {
+
+    let (mut smt2_problem, signal_to_name) = tag_context_to_smt2(problem);
+
     // negate the postconditions: the negation is pushed down to the leaves so
     // that no negated range is left in the formula
     let negated: Vec<String> = problem.specification_intermediates.iter()
@@ -567,6 +582,46 @@ pub fn tag_verification_problem_to_smt2(
     smt2_problem.push_back(format!("(check-sat)"));
     smt2_problem
     
+}
+
+
+/// Same context, and as goal the negation of the given set of obligations. With
+/// a single one the answer says exactly which obligation it is about; with all
+/// of them it is the combined attempt of the adaptive mode.
+pub fn tag_obligations_to_smt2(
+    problem: &VerificationProblem,
+    obligations: &[&TagObligation],
+) -> LinkedList<String> {
+
+    let (mut smt2_problem, signal_to_name) = tag_context_to_smt2(problem);
+
+    let negated: Vec<String> = obligations.iter()
+        .map(|o| transform_negated_expression_to_smt2(
+            &o.condition, &signal_to_name, &problem.field))
+        .collect();
+
+    let goal: String = if negated.len() == 0{
+        // nothing to refute
+        "false".to_string()
+    } else if negated.len() == 1{
+        negated[0].clone()
+    } else{
+        // not (p1 and ... and pn) = (not p1) or ... or (not pn)
+        format!("(or {})", negated.join(" "))
+    };
+
+    smt2_problem.push_back(format!("(assert {})", goal));
+    smt2_problem.push_back(format!("(check-sat)"));
+    smt2_problem
+}
+
+
+/// A single obligation.
+pub fn tag_obligation_to_smt2(
+    problem: &VerificationProblem,
+    obligation: &TagObligation,
+) -> LinkedList<String> {
+    tag_obligations_to_smt2(problem, &[obligation])
 }
 
 

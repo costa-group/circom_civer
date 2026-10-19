@@ -40,6 +40,8 @@ pub struct Input {
     pub solver: String,
     pub out_civer_name: PathBuf,
     pub check_tags: bool,
+    pub split_tags: bool,
+    pub always_split_tags: bool,
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub verification_timeout: u64,
@@ -124,6 +126,8 @@ impl Input {
             flag_no_init: input_processing::get_flag_no_init(&matches), 
             prime: input_processing::get_prime(&matches)?,
             check_tags: input_processing::get_check_tags(&matches),
+            split_tags: input_processing::get_split_tags(&matches),
+            always_split_tags: input_processing::get_always_split_tags(&matches),
             check_safety: input_processing::get_check_safety(&matches),
             add_tags_info: input_processing::get_flag_add_tags_info(&matches),
             solver: input_processing::get_solver(&matches)?,
@@ -256,6 +260,13 @@ impl Input {
     }
     pub fn check_tags(&self) -> bool {
         self.check_tags
+    }
+    pub fn split_tags(&self) -> bool {
+        // asking to always split implies splitting
+        self.split_tags || self.always_split_tags
+    }
+    pub fn always_split_tags(&self) -> bool {
+        self.always_split_tags
     }
     pub fn check_safety(&self) -> bool {
         self.check_safety
@@ -406,6 +417,12 @@ mod input_processing {
     }
     pub fn get_check_tags(matches: &ArgMatches) -> bool {
         matches.is_present("check_tags")
+    }
+    pub fn get_split_tags(matches: &ArgMatches) -> bool {
+        matches.is_present("split_tags")
+    }
+    pub fn get_always_split_tags(matches: &ArgMatches) -> bool {
+        matches.is_present("always_split_tags")
     }
     pub fn get_flag_add_tags_info(matches: &ArgMatches) -> bool {
         matches.is_present("flag_add_tags_info")
@@ -587,6 +604,20 @@ mod input_processing {
                     .takes_value(false)
                     .display_order(80)
                     .help("Tries to verify the correctness of the tags of the circuit"),
+            )
+            .arg(
+                Arg::with_name("split_tags")
+                    .long("split_tags")
+                    .takes_value(false)
+                    .display_order(80)
+                    .help("With --check_tags, tries all the tag obligations together and, only if that is unknown, retries them one at a time"),
+            )
+            .arg(
+                Arg::with_name("always_split_tags")
+                    .long("always_split_tags")
+                    .takes_value(false)
+                    .display_order(80)
+                    .help("Like --split_tags but without the combined attempt: always one obligation at a time"),
             )
             .arg(
                 Arg::with_name("solver")

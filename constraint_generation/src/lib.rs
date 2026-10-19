@@ -38,6 +38,8 @@ pub struct BuildConfig {
     pub inspect_constraints: bool,
     pub prime: String,
     pub check_tags: bool,
+    pub split_tags: bool,
+    pub always_split_tags: bool,
     pub check_safety: bool,
     pub add_tags_info: bool,
     pub civer_file: String,
@@ -82,6 +84,8 @@ pub fn build_circuit(program: ProgramArchive, config: BuildConfig) -> BuildRespo
 
         let verification_config = VerificationConfig{
             check_tags: config.check_tags,
+            split_tags: config.split_tags,
+            always_split_tags: config.always_split_tags,
             check_safety: config.check_safety,
             add_tags_info: config.add_tags_info,
             verbose: config.flag_verbose,

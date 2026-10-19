@@ -1,11 +1,12 @@
 use std::collections::{HashMap, LinkedList};
 use program_structure::ast::{Expression, ExpressionInfixOpcode, ExpressionPrefixOpcode};
-use crate::{CompleteVerificationResult, ExecutedImplication, PossibleResult, SafetyImplication};
+use crate::{report_obligation, CompleteVerificationResult, ExecutedImplication, PossibleResult, SafetyImplication, TagObligation};
 use rand::Rng;
 use circom_algebra::num_bigint::BigInt;
 use crate::Constraint;
 use std::fs::File;
 use std::io::Write;
+use std::time::Instant;
 
 use crate::civer::expression_handler::get_bounds_expression_bool;
 use crate::civer::deduction_rules::*;
@@ -89,7 +90,10 @@ pub struct TemplateVerification {
     pub verification_timeout: u64,
     pub check_tags: bool,
     pub check_safety: bool,
+    pub split_tags: bool,
+    pub always_split_tags: bool,
     pub add_tags_info: bool,
+    pub tag_obligations: Vec<TagObligation>,
 }
 
 impl TemplateVerification{
@@ -127,7 +131,10 @@ impl TemplateVerification{
             verification_timeout: problem.config.verification_timeout, 
             check_tags: problem.config.check_tags, 
             check_safety: problem.config.check_safety,
+            split_tags: problem.config.split_tags,
+            always_split_tags: problem.config.always_split_tags,
             add_tags_info: problem.config.add_tags_info,
+            tag_obligations: problem.tag_obligations.clone(),
         }
     }
 
@@ -152,7 +159,16 @@ impl TemplateVerification{
         self.deduce_round();
         let mut logs = Vec::new();
 
-        let tags_result = if self.check_tags{
+        let mut tag_obligation_results: Vec<(String, PossibleResult)> = Vec::new();
+
+        let tags_result = if self.check_tags && self.split_tags{
+            if self.tag_obligations.is_empty(){
+                logs.push(format!("### NOTHING TO VERIFY: NO TAG OBLIGATIONS \n"));
+                Some(PossibleResult::NOTHING)
+            } else{
+                Some(self.prove_tags_adaptive(&mut tag_obligation_results, &mut logs))
+            }
+        } else if self.check_tags{
             if self.postconditions.is_empty() {
                 logs.push(format!("### NOTHING TO VERIFY: THE TEMPLATE DOES NOT CONTAIN TAGGED SIGNALS WITH SPECIFICATIONS \n"));
                 Some(PossibleResult::NOTHING)
@@ -169,7 +185,105 @@ impl TemplateVerification{
             None
         };
 
-        CompleteVerificationResult { safety_result, tags_result, logs }
+        CompleteVerificationResult { safety_result, tags_result, tag_obligation_results, logs }
+    }
+
+    /// Adaptive strategy: one query with all the obligations first, which is
+    /// cheap when it closes, and only if it comes back unknown retry them one at
+    /// a time. Both branches prove the same set of obligations.
+    pub fn prove_tags_adaptive(
+        &self,
+        results: &mut Vec<(String, PossibleResult)>,
+        logs: &mut Vec<String>,
+    ) -> PossibleResult{
+
+        if !self.always_split_tags{
+            logs.push(format!("### STUDYING TAG CORRECTNESS, ALL {} OBLIGATIONS TOGETHER \n",
+                self.tag_obligations.len()));
+
+            let goals: Vec<Expression> = self.tag_obligations.iter()
+                .map(|o| o.condition.clone())
+                .collect();
+            let result = self.try_prove_tags_goals(&goals, logs);
+
+            match result{
+                PossibleResult::VERIFIED =>{
+                    for o in &self.tag_obligations{
+                        results.push((o.label.clone(), PossibleResult::VERIFIED));
+                    }
+                    return PossibleResult::VERIFIED;
+                },
+                PossibleResult::FAILED =>{
+                    // sat on the combined query only says that some obligation
+                    // fails, not which one: split to find out
+                    logs.push(format!("### SOME OBLIGATION FAILS, SPLITTING TO FIND WHICH ONE\n"));
+                },
+                _ =>{
+                    logs.push(format!("### COMBINED ATTEMPT TIMED OUT, SPLITTING\n"));
+                }
+            }
+        }
+
+        self.prove_tags_one_by_one(results, logs)
+    }
+
+    /// One query per obligation. Any refuted obligation refutes the template;
+    /// otherwise any obligation left unknown leaves the template unknown.
+    ///
+    /// A counterexample does not stop the round: the remaining obligations are
+    /// still tried. The counterexample may come from the abstraction of the
+    /// children, and every obligation proven now is one the next round, with
+    /// their constraints, no longer has to retry.
+    pub fn prove_tags_one_by_one(
+        &self,
+        results: &mut Vec<(String, PossibleResult)>,
+        logs: &mut Vec<String>,
+    ) -> PossibleResult{
+        logs.push(format!("### STUDYING TAG CORRECTNESS, ONE OBLIGATION AT A TIME \n"));
+
+        let total = self.tag_obligations.len();
+        let mut n_verified = 0;
+        let mut n_unknown = 0;
+        let mut failed: Vec<&String> = Vec::new();
+
+        for (i, obligation) in self.tag_obligations.iter().enumerate(){
+            let goals = vec![obligation.condition.clone()];
+            let started = Instant::now();
+            let result = self.try_prove_tags_goals(&goals, logs);
+            let elapsed = started.elapsed().as_secs_f64();
+
+            let tag = match result{
+                PossibleResult::VERIFIED => { n_verified += 1; "verified" },
+                PossibleResult::FAILED => { failed.push(&obligation.label); "COUNTEREXAMPLE" },
+                PossibleResult::UNKNOWN => { n_unknown += 1; "timeout" },
+                _ => "unknown result",
+            };
+            logs.push(format!("###   [{}/{}] {}: {}\n", i + 1, total, obligation.label, tag));
+            // report as we go: the logs are only flushed to the .civer file at
+            // the end, and with hundreds of obligations that is too late to be
+            // useful
+            report_obligation(&self.template_name, i + 1, total, &obligation.label,
+                              tag, elapsed);
+            results.push((obligation.label.clone(), result.clone()));
+        }
+
+        logs.push(format!("### OBLIGATIONS: {} verified, {} counterexample, {} timeout, of {}\n",
+            n_verified, failed.len(), n_unknown, total));
+
+        if !failed.is_empty(){
+            logs.push(format!(
+                "### THE VERIFICATION OF THE TAGS OF THE TEMPLATE FAILED. FOUND COUNTEREXAMPLE USING SMT FOR:\n"));
+            for label in failed{
+                logs.push(format!("###   {}\n", label));
+            }
+            PossibleResult::FAILED
+        } else if n_unknown > 0{
+            logs.push(format!("### UNKNOWN: VERIFICATION OF THE TAGS TIMEOUT\n"));
+            PossibleResult::UNKNOWN
+        } else{
+            logs.push(format!("### SUCCESS: THE TAGS OF THE TEMPLATE ARE VERIFIED\n"));
+            PossibleResult::VERIFIED
+        }
     }
 
     // normalizes the constraints choosing the smaller coefficients
@@ -207,7 +321,14 @@ impl TemplateVerification{
     }
 
 
+    /// Proves every obligation together, as before.
     pub fn try_prove_tags(&self, logs: &mut Vec<String>)-> PossibleResult{
+        self.try_prove_tags_goals(&self.postconditions, logs)
+    }
+
+    /// Same query, but the negated goal is only the given obligations. With a
+    /// single one the answer says exactly which obligation it is about.
+    pub fn try_prove_tags_goals(&self, goals: &Vec<Expression>, logs: &mut Vec<String>)-> PossibleResult{
         let mut cfg = Config::new();
         cfg.set_timeout_msec(self.verification_timeout);
         let ctx = Context::new(&cfg);
@@ -261,7 +382,7 @@ impl TemplateVerification{
 
 
         let mut value_postconditions = z3::ast::Bool::from_bool(&ctx, true);
-        for postcondition in &self.postconditions{
+        for postcondition in goals{
             value_postconditions &= unwrap_translation(get_z3_expression_bool(&ctx, &postcondition, &aux_signals_to_smt_rep), "postcondition");
         }
 

@@ -83,6 +83,32 @@ impl VerificationTree {
         self.is_custom
     }
 
+    /// One labelled obligation per tagged signal that this template must prove:
+    /// its outputs and its intermediates. Exactly the same set the combined
+    /// query proves, only split and labelled so that a result can be attributed
+    /// to a single obligation.
+    ///
+    /// The input tags of the subcomponents are deliberately NOT here: they are
+    /// hypotheses, assumed as the left hand side of the implication built by
+    /// generate_tags_implications, and discharged by the tag discipline of the
+    /// type checker rather than by an SMT query.
+    pub fn collect_tag_obligations(&self) -> Vec<TagObligation>{
+        let mut obligations = Vec::new();
+        for (i, (tag, c)) in self.specification_intermediates.iter().enumerate(){
+            obligations.push(TagObligation{
+                label: format!("intermediate #{} [{}]", i, tag),
+                condition: c.clone(),
+            });
+        }
+        for (i, (tag, c)) in self.specification_postconditions.iter().enumerate(){
+            obligations.push(TagObligation{
+                label: format!("output #{} [{}]", i, tag),
+                condition: c.clone(),
+            });
+        }
+        obligations
+    }
+
     pub fn get_no_postconditions(&self) -> usize{
         self.specification_intermediates.len() + self.specification_postconditions.len() 
     }
@@ -141,6 +167,11 @@ impl VerificationTree {
             specification_preconditions: conditions(&self.specification_preconditions),
             specification_intermediates: conditions(&self.specification_intermediates),
             specification_postconditions: conditions(&self.specification_postconditions),
+            tag_obligations: if config.split_tags{
+                self.collect_tag_obligations()
+            } else{
+                Vec::new()
+            },
             constraints: self.constraints.clone(),  
             tags_implications: tags_implications,
             implications_safety: implications_safety,
@@ -151,6 +182,9 @@ impl VerificationTree {
         logs.push(format!("Number of signals (i,int,o): {}\n", self.number_signals));
         if config.check_tags{
             logs.push(format!("Number of tagged signals to check: {}\n", self.specification_postconditions.len() + self.specification_intermediates.len()));
+            if config.split_tags{
+                logs.push(format!("Number of tag obligations to prove one by one: {}\n", verification.tag_obligations.len()));
+            }
         }
      
         logs.push(format!("Number of constraints in template: {}\n", self.constraints().len()));
@@ -167,6 +201,7 @@ impl VerificationTree {
             safety_result =  complete_result.safety_result.unwrap();
         }
 
+        drop_proven_obligations(&mut verification, &complete_result.tag_obligation_results);
 
         if tag_result == PossibleResult::VERIFIED{
             verification.config.check_tags = false;
@@ -204,6 +239,7 @@ impl VerificationTree {
                 safety_result =  complete_result.safety_result.unwrap();
             }
 
+            drop_proven_obligations(&mut verification, &complete_result.tag_obligation_results);
 
             if tag_result == PossibleResult::VERIFIED{
                 verification.config.check_tags = false;
@@ -305,6 +341,23 @@ impl VerificationTree {
     /// Drops the name of the tag: from here on only the condition is needed.
     fn conditions(specs: &Vec<(String, Expression)>) -> Vec<Expression>{
         specs.iter().map(|(_tag, c)| c.clone()).collect()
+    }
+
+    /// In split mode, a later round only has to retry the obligations that are
+    /// not proven yet: everything already VERIFIED stays verified when more
+    /// information (the constraints of the children) is added.
+    fn drop_proven_obligations(
+        verification: &mut VerificationProblem,
+        results: &Vec<(String, PossibleResult)>,
+    ){
+        if results.is_empty(){
+            return;
+        }
+        let proven: HashSet<&String> = results.iter()
+            .filter(|(_, r)| *r == PossibleResult::VERIFIED)
+            .map(|(label, _)| label)
+            .collect();
+        verification.tag_obligations.retain(|o| !proven.contains(&o.label));
     }
 
     fn pretty_print_result(logs: &mut Vec<String>, duration: Duration, n_rounds: usize, result_safety: &PossibleResult, result_tags: &PossibleResult){

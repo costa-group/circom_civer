@@ -45,6 +45,8 @@ fn start() -> Result<(), ()> {
         json_substitutions: user_input.json_substitutions_file().to_string(),
         prime: user_input.prime(),       
         check_tags: user_input.check_tags(),
+        split_tags: user_input.split_tags(),
+        always_split_tags: user_input.always_split_tags(),
         check_safety: user_input.check_safety(),
         add_tags_info: user_input.add_tags_info(),
         civer_file: user_input.civer_file().to_string(),

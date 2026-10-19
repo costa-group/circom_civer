@@ -39,6 +39,15 @@ pub struct ExecutedImplication{
 #[derive(Clone, Copy)] 
 pub struct VerificationConfig{
     pub check_tags: bool,
+    /// Adaptive mode: try all the tag obligations in a single query first and,
+    /// only if that comes back unknown, retry them one at a time. Same set of
+    /// obligations as the plain mode, so the two branches prove exactly the
+    /// same thing; splitting only makes each query smaller and tells which
+    /// obligation each answer is about.
+    pub split_tags: bool,
+    /// Skip the combined attempt and always go one obligation at a time.
+    /// Slower, but useful to measure the two strategies separately.
+    pub always_split_tags: bool,
     pub check_safety: bool,
     /// When proving weak safety, assume on both copies the specifications of
     /// the tags of the outputs and intermediates, and the tag abstraction of
@@ -47,6 +56,32 @@ pub struct VerificationConfig{
     pub solver: PossibleSolver,
     pub verbose: bool,
     pub verification_timeout: u64
+}
+
+/// Prints the outcome of one obligation as soon as it is known, flushing so
+/// that a long run shows progress. The logs of a template are only written to
+/// the .civer file when the whole tree is done, which with hundreds of
+/// obligations per template is far too late to be useful.
+pub fn report_obligation(
+    template_name: &str,
+    index: usize,
+    total: usize,
+    label: &str,
+    outcome: &str,
+    seconds: f64,
+){
+    use std::io::Write;
+    println!("    [{}] obligation {}/{} ({}): {} ({:.2}s)",
+        template_name, index, total, label, outcome, seconds);
+    let _ = std::io::stdout().flush();
+}
+
+
+/// A single tag proof obligation, with a label describing where it comes from.
+#[derive(Clone)]
+pub struct TagObligation{
+    pub label: String,
+    pub condition: Expression,
 }
 
 #[derive(Clone, Debug)]
@@ -86,6 +121,10 @@ pub struct VerificationProblem {
     pub specification_preconditions: Vec<Expression>,
     pub specification_intermediates: Vec<Expression>,
     pub specification_postconditions : Vec<Expression>,
+    /// The same obligations as specification_intermediates +
+    /// specification_postconditions, each one separately and labelled. Only
+    /// used when config.split_tags.
+    pub tag_obligations: Vec<TagObligation>,
     pub constraints: Vec<Constraint>,
     pub tags_implications: Vec<ExecutedImplication>,
     pub implications_safety: Vec<SafetyImplication>,
@@ -129,5 +168,8 @@ pub enum PossibleResult{
 pub struct CompleteVerificationResult {
     pub safety_result: Option<PossibleResult>,
     pub tags_result: Option<PossibleResult>,
+    /// One entry per obligation when solving in split mode, empty otherwise.
+    /// Lets the caller retry only what is not proven yet on the next round.
+    pub tag_obligation_results: Vec<(String, PossibleResult)>,
     pub logs: Vec<String>
 }
