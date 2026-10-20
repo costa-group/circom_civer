@@ -19,15 +19,24 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
 
-/// Name of the SMT2 file of a query: the kind of query (safety or tags)
-/// followed by the name of the template, so that `Num2Bits(254)_obl3` becomes
-/// `tags_Num2Bits_254__obl3_<n>.smt2`. The files are kept under --verbose, and
-/// the name says which query each one is: cutting it at the first parenthesis
-/// would lose the parameters of the template and the obligation.
+/// Name of the SMT2 file of a query: the kind of query (safety or tags), the
+/// name of the template and, for a single tag obligation, its label, with every
+/// run of other characters turned into one '_'. The obligation
+/// `output #3 [binary]` of `Num2Bits(254)` becomes
+/// `tags_Num2Bits_254_output_3_binary_<n>.smt2`. The files are kept under
+/// --verbose, and the name says which query each one is: cutting it at the
+/// first parenthesis would lose the parameters of the template, and a number
+/// would not identify the obligation, since a later round numbers the pending
+/// ones again from 1.
 fn smt_file_name(kind: &str, filename: &str, random_number: u32) -> String {
-    let safe: String = filename.chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
-        .collect();
+    let mut safe = String::new();
+    for c in filename.chars() {
+        if c.is_ascii_alphanumeric() {
+            safe.push(c);
+        } else if !safe.ends_with('_') {
+            safe.push('_');
+        }
+    }
     format!("{}_{}_{}.smt2", kind, safe.trim_matches('_'), random_number)
 }
 
@@ -295,7 +304,7 @@ fn solve_tags_one_by_one(
 
     for (i, obligation) in problem.tag_obligations.iter().enumerate(){
         let smt2_problem: LinkedList<String> = tag_obligation_to_smt2(problem, obligation);
-        let name = format!("{}_obl{}", problem.template_name, i);
+        let name = format!("{} {}", problem.template_name, obligation.label);
         let started = Instant::now();
         let result = handling_ffsol_call(&smt2_problem, &name, config, None, "tags");
         let elapsed = started.elapsed().as_secs_f64();
