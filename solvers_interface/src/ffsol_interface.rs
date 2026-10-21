@@ -37,8 +37,23 @@ fn smt_file_name(kind: &str, filename: &str, random_number: u32) -> String {
             safe.push('_');
         }
     }
-    format!("{}_{}_{}.smt2", kind, safe.trim_matches('_'), random_number)
+    let mut safe = safe.trim_matches('_').to_string();
+    // the parameters of a template can be whole arrays of constants (the round
+    // constants of Poseidon), far beyond the 255 bytes a file name may have:
+    // keep the beginning and a hash of the whole name, so that it stays unique
+    if safe.len() > MAX_NAME_LEN {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        filename.hash(&mut hasher);
+        safe = format!("{}_{:016x}", safe[..MAX_NAME_LEN].trim_end_matches('_'), hasher.finish());
+    }
+    format!("{}_{}_{}.smt2", kind, safe, random_number)
 }
+
+/// Longest part of a file name taken from the name of the template and the
+/// label, well below the 255 bytes of most file systems.
+const MAX_NAME_LEN: usize = 150;
 
 #[derive(Clone)]
 pub struct FfsolConfig {
